@@ -40,7 +40,7 @@ bot.hears('/help',    cmds.handleHelp);
 
 bot.on('message', (ctx) => {
   const text = ctx.message?.text || '';
-  if (!text.startsWith('/')) return; // игнорируем обычный текст
+  if (!text.startsWith('/')) return;
   ctx.reply(require('./locales/' + cfg.locale).cmdUnknown, { parse_mode: 'Markdown' });
 });
 
@@ -48,27 +48,31 @@ bot.on('message', (ctx) => {
 // Планировщик мониторинга
 // ================================================================
 
-// Счётчик минут для определения когда слать алерты
-let minuteCounter = 0;
-const ALERT_EVERY_N_MINUTES = Math.round(cfg.alertIntervalSec / cfg.pollIntervalSec);
+// Счётчик для определения 30-минутных интервалов (каждый 3-й запуск = 30 минут)
+let cycleCounter = 0;
 
-// Каждую минуту — опрос API для всех пользователей
-cron.schedule('* * * * *', async () => {
+// Каждые 10 минут
+cron.schedule('*/10 * * * *', async () => {
   const users = state.getAllUsers();
   if (users.length === 0) return;
 
-  logger.info(`[CRON] Poll tick #${minuteCounter} — users: ${users.length}`);
+  logger.info(`[CRON] Poll cycle #${cycleCounter} — users: ${users.length}`);
 
-  // Запускаем мониторинг параллельно для всех пользователей
-  await Promise.all(users.map(u => monitor.runMonitorCycle(u)));
+  // QR/продажи проверяем каждые 30 минут (каждый 3-й цикл)
+  const shouldRunQrPayments = (cycleCounter % 3 === 0);
 
-  minuteCounter++;
+  // Запускаем мониторинг для всех пользователей
+  await Promise.all(users.map(u => monitor.runMonitorCycle(u, {
+    checkDeviceDetail: true,   // каждые 10 минут
+    checkExceptions:   true,   // каждые 10 минут
+    checkQrPayments:   shouldRunQrPayments,  // каждые 30 минут
+  })));
 
-  // Каждые N минут отправляем накопленные алерты
-  if (minuteCounter % ALERT_EVERY_N_MINUTES === 0) {
-    logger.info(`[CRON] Flushing alerts to Telegram`);
-    await sender.flushAllAlerts(bot);
-  }
+  cycleCounter++;
+
+  // Отправляем накопленные алерты
+  logger.info(`[CRON] Flushing alerts to Telegram`);
+  await sender.flushAllAlerts(bot);
 });
 
 // ================================================================
@@ -78,9 +82,13 @@ async function main() {
   logger.info('='.repeat(50));
   logger.info('🤖 Watermat Monitor Bot starting...');
   logger.info(`📍 Locale: ${cfg.locale.toUpperCase()}`);
-  logger.info(`⏱  Poll interval: ${cfg.pollIntervalSec}s`);
-  logger.info(`📤 Alert interval: ${cfg.alertIntervalSec}s (every ${ALERT_EVERY_N_MINUTES} polls)`);
+  logger.info(`📤 Alert interval: every poll (10 min)`);
   logger.info(`📦 Batch size: ${cfg.batchSize}`);
+  logger.info('🔄 Check intervals:');
+  logger.info('   - Device details: every 10 minutes');
+  logger.info('   - Exceptions: every 10 minutes');
+  logger.info('   - QR/Sales: every 30 minutes');
+  logger.info('   - SIM cards: every 60 minutes');
   logger.info('='.repeat(50));
 
   await bot.launch();

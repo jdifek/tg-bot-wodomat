@@ -1,5 +1,4 @@
 // src/services/monitor.js
-// Вся логика проверок аппаратов и формирования алертов
 'use strict';
 
 const dayjs  = require('dayjs');
@@ -12,8 +11,13 @@ const t      = require('../locales/' + cfg.locale);
 // ================================================================
 // ОСНОВНАЯ ФУНКЦИЯ — вызывается каждую минуту для каждого юзера
 // ================================================================
-async function runMonitorCycle(userState) {
+async function runMonitorCycle(userState, options = {}) {
   const { appid, saler } = userState;
+  const {
+    checkDeviceDetail = true,
+    checkExceptions   = true,
+    checkQrPayments   = true,
+  } = options;
 
   try {
     // 1. Обновляем список всех устройств раз в 10 минут
@@ -21,14 +25,20 @@ async function runMonitorCycle(userState) {
       await refreshDeviceList(userState);
     }
 
-    // 2. Быстрые проверки через exception-status-query (1 запрос на тип)
-    await checkExceptions(userState);
+    // 2. Быстрые проверки через exception-status-query (каждые 10 минут)
+    if (checkExceptions) {
+      await checkExceptions(userState);
+    }
 
-    // 3. Детальный опрос батча аппаратов (температура и т.д.)
-    await checkDeviceBatch(userState);
+    // 3. Детальный опрос батча аппаратов (каждые 10 минут)
+    if (checkDeviceDetail) {
+      await checkDeviceBatch(userState);
+    }
 
-    // 4. Проверка QR платежей
-    await checkQrPayments(userState);
+    // 4. Проверка QR платежей (каждые 30 минут)
+    if (checkQrPayments) {
+      await checkQrPayments(userState);
+    }
 
     // 5. Проверка SIM карт (раз в час)
     if (!userState._lastSimCheck || Date.now() - userState._lastSimCheck > 60 * 60 * 1000) {

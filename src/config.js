@@ -8,16 +8,14 @@ const cfg = {
   locale:         (process.env.LOCALE || 'ru').toLowerCase(),
   apiBaseUrl:     process.env.API_BASE_URL || 'http://api.happy-ti.com:2028',
 
-  pollIntervalSec:  parseInt(process.env.POLL_INTERVAL_SEC  || '60',  10),
-  alertIntervalSec: parseInt(process.env.ALERT_INTERVAL_SEC || '300', 10),
-  batchSize:        parseInt(process.env.BATCH_SIZE         || '90',  10),
-  requestDelayMs:   parseInt(process.env.REQUEST_DELAY_MS   || '350', 10),
+  batchSize:      parseInt(process.env.BATCH_SIZE       || '90',  10),
+  requestDelayMs: parseInt(process.env.REQUEST_DELAY_MS || '350', 10),
 
-  tempMin:          parseFloat(process.env.TEMP_MIN       || '3'),
-  tempMax:          parseFloat(process.env.TEMP_MAX       || '40'),
-  offlineMinutes:   parseInt(process.env.OFFLINE_MINUTES  || '15', 10),
-  simDaysWarn:      parseInt(process.env.SIM_DAYS_WARN    || '7',  10),
-  dailyReportHour:  parseInt(process.env.DAILY_REPORT_HOUR || '8', 10),
+  tempMin:        parseFloat(process.env.TEMP_MIN       || '3'),
+  tempMax:        parseFloat(process.env.TEMP_MAX       || '40'),
+  offlineMinutes: parseInt(process.env.OFFLINE_MINUTES  || '15', 10),
+  simDaysWarn:    parseInt(process.env.SIM_DAYS_WARN    || '7',  10),
+  dailyReportHour:parseInt(process.env.DAILY_REPORT_HOUR || '8', 10),
 
   deviceTypes: (process.env.DEVICE_TYPES || 'shop,shop_liquid,shop_water')
     .split(',').map(s => s.trim()).filter(Boolean),
