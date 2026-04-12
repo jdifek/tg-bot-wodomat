@@ -1,49 +1,65 @@
 // src/services/monitor.js
 'use strict';
 
-const dayjs  = require('dayjs');
+const dayjs    = require('dayjs');
+const utc      = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+const customParseFormat = require('dayjs/plugin/customParseFormat');
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.extend(customParseFormat);
+dayjs.tz.setDefault(process.env.TZ || 'Europe/Warsaw');
+
 const cfg    = require('../config');
 const logger = require('../logger');
 const api    = require('./apiClient');
 const state  = require('./stateManager');
 const t      = require('../locales/' + cfg.locale);
 
+// Значения которые означают "всё нормально" в API (китайский + английский)
+const NORMAL_VALUES = ['正常', 'normal', 'Normal', ''];
+
+// Интервалы из .env (в миллисекундах)
+const EXCEPTION_INTERVAL = parseInt(process.env.EXCEPTION_INTERVAL_MIN || '10') * 60 * 1000;
+const DETAIL_INTERVAL    = parseInt(process.env.DETAIL_INTERVAL_MIN    || '10') * 60 * 1000;
+const QR_INTERVAL        = parseInt(process.env.QR_INTERVAL_MIN        || '30') * 60 * 1000;
+
 // ================================================================
 // ОСНОВНАЯ ФУНКЦИЯ — вызывается каждую минуту для каждого юзера
 // ================================================================
-async function runMonitorCycle(userState, options = {}) {
+async function runMonitorCycle(userState) {
   const { appid, saler } = userState;
-  const {
-    checkDeviceDetail = true,
-    checkExceptions   = true,
-    checkQrPayments   = true,
-  } = options;
+  const now = Date.now();
 
   try {
-    // 1. Обновляем список всех устройств раз в 10 минут
-    if (Date.now() - userState.deviceIdsLastUpdate > 10 * 60 * 1000) {
+    // 1. Список устройств — раз в 10 минут
+    if (now - userState.deviceIdsLastUpdate > 10 * 60 * 1000) {
       await refreshDeviceList(userState);
     }
 
-    // 2. Быстрые проверки через exception-status-query (каждые 10 минут)
-    if (checkExceptions) {
+    // 2. Exception (оффлайн, вода, давление) — каждые 10 минут
+    if (!userState._lastExceptionCheck || now - userState._lastExceptionCheck > EXCEPTION_INTERVAL) {
       await checkExceptions(userState);
+      userState._lastExceptionCheck = now;
     }
 
-    // 3. Детальный опрос батча аппаратов (каждые 10 минут)
-    if (checkDeviceDetail) {
+    // 3. Детали аппаратов (температура) — каждые 10 минут батчами
+    if (!userState._lastDetailCheck || now - userState._lastDetailCheck > DETAIL_INTERVAL) {
       await checkDeviceBatch(userState);
+      userState._lastDetailCheck = now;
     }
 
-    // 4. Проверка QR платежей (каждые 30 минут)
-    if (checkQrPayments) {
+    // 4. QR платежи и продажи без розлива — каждые 30 минут
+    if (!userState._lastQrCheck || now - userState._lastQrCheck > QR_INTERVAL) {
       await checkQrPayments(userState);
+      userState._lastQrCheck = now;
     }
 
-    // 5. Проверка SIM карт (раз в час)
-    if (!userState._lastSimCheck || Date.now() - userState._lastSimCheck > 60 * 60 * 1000) {
+    // 5. SIM карты — раз в час
+    if (!userState._lastSimCheck || now - userState._lastSimCheck > 60 * 60 * 1000) {
       await checkSimCards(userState);
-      userState._lastSimCheck = Date.now();
+      userState._lastSimCheck = now;
     }
 
     // 6. Ежедневный отчёт
@@ -65,7 +81,6 @@ async function refreshDeviceList(userState) {
     const devices = await api.getAllDevices(appid, saler, type);
     for (const d of devices) {
       allIds.push(d.id);
-      // Кэшируем location
       if (!userState.devices.has(d.id)) {
         userState.devices.set(d.id, { location: d.location || d.id, type });
       } else {
@@ -91,8 +106,6 @@ async function checkExceptions(userState) {
     if (!data || data.code !== 0 || !data.data) continue;
 
     const items = data.data.items || [];
-
-    // Текущие проблемные устройства из API
     const currentProblemIds = new Set();
 
     for (const item of items) {
@@ -101,61 +114,63 @@ async function checkExceptions(userState) {
       currentProblemIds.add(deviceId);
 
       // -- Оффлайн --
-      if (item.lastConnect) {
-        const lastSeen   = dayjs(item.lastConnect);
-        const diffMin    = dayjs().diff(lastSeen, 'minute');
-        const alertKey   = `offline_${deviceId}`;
+      // Проверяем ДВА способа: statusMsg === '离线' ИЛИ lastConnect давно
+      const alertKeyOffline = `offline_${deviceId}`;
+      const isOfflineByStatus = item.statusMsg === '离线';
 
-        if (diffMin >= cfg.offlineMinutes) {
-          state.setAlert(userState, alertKey, {
-            type: 'offline',
-            msg:  t.alertOffline(deviceId, location, diffMin),
-          });
-        } else {
-          // Был оффлайн — теперь снова онлайн
-          if (userState.activeAlerts.has(alertKey)) {
-            state.resolveAlert(userState, alertKey, t.alertStatusOnline(deviceId, location));
-          }
+      let diffMin = 0;
+      if (item.lastConnect) {
+        // Явно парсим формат API: "2025-11-17 17:16:47"
+        const lastSeen = dayjs.tz(item.lastConnect, 'YYYY-MM-DD HH:mm:ss', process.env.TZ || 'Europe/Warsaw');
+        diffMin = dayjs().diff(lastSeen, 'minute');
+        logger.info(`[${deviceId}] lastConnect=${item.lastConnect} diffMin=${diffMin} statusMsg=${item.statusMsg}`);
+      }
+
+      const isOffline = isOfflineByStatus || diffMin >= cfg.offlineMinutes;
+
+      if (isOffline) {
+        const offlineMins = diffMin > 0 ? diffMin : cfg.offlineMinutes;
+        state.setAlert(userState, alertKeyOffline, {
+          type: 'offline',
+          msg:  t.alertOffline(deviceId, location, offlineMins),
+        });
+      } else {
+        if (userState.activeAlerts.has(alertKeyOffline)) {
+          state.resolveAlert(userState, alertKeyOffline, t.alertStatusOnline(deviceId, location));
         }
       }
 
       // -- Уровень воды --
-      if (item.waterLevel && item.waterLevel !== '正常' && item.waterLevel !== 'normal') {
-        const alertKey = `water_level_${deviceId}`;
-        state.setAlert(userState, alertKey, {
+      const alertKeyWater = `water_level_${deviceId}`;
+      if (item.waterLevel && !NORMAL_VALUES.includes(item.waterLevel)) {
+        state.setAlert(userState, alertKeyWater, {
           type: 'water_level',
           msg:  t.alertWaterLevel(deviceId, location, item.waterLevel),
         });
       } else {
-        state.resolveAlert(userState, `water_level_${deviceId}`,
-          t.alertResolved(deviceId, location, 'water_level'));
+        if (userState.activeAlerts.has(alertKeyWater)) {
+          state.resolveAlert(userState, alertKeyWater,
+            t.alertResolved(deviceId, location, 'water_level'));
+        }
       }
 
-      // -- Давление воды (только для shop и shop_liquid, не для shop_water) --
-      if (type !== 'shop_water' && item.waterPressure &&
-          item.waterPressure !== '正常' && item.waterPressure !== 'normal') {
-        const alertKey = `water_pressure_${deviceId}`;
-        state.setAlert(userState, alertKey, {
+      // -- Давление воды --
+      const alertKeyPressure = `water_pressure_${deviceId}`;
+      if (type !== 'shop_water' && item.waterPressure && !NORMAL_VALUES.includes(item.waterPressure)) {
+        state.setAlert(userState, alertKeyPressure, {
           type: 'water_pressure',
           msg:  t.alertWaterPressure(deviceId, location, item.waterPressure),
         });
       } else {
-        state.resolveAlert(userState, `water_pressure_${deviceId}`,
-          t.alertResolved(deviceId, location, 'water_pressure'));
+        if (userState.activeAlerts.has(alertKeyPressure)) {
+          state.resolveAlert(userState, alertKeyPressure,
+            t.alertResolved(deviceId, location, 'water_pressure'));
+        }
       }
 
-      // -- Температура (если передаётся в exception) --
+      // -- Температура из exception --
       if (item.temp !== undefined && item.temp !== null && item.temp !== '') {
         checkTemp(userState, deviceId, location, parseFloat(item.temp));
-      }
-    }
-
-    // Устройства которые пропали из exception-списка = проблема решена
-    for (const [key] of userState.activeAlerts) {
-      if (!key.startsWith('offline_') && !key.startsWith('water_')) continue;
-      const dId = key.split('_').pop();
-      if (!currentProblemIds.has(dId)) {
-        // Уже не в списке проблем
       }
     }
 
@@ -164,18 +179,16 @@ async function checkExceptions(userState) {
 }
 
 // ================================================================
-// 3. Батчевый опрос 3.3.4 (температура, детали)
+// 3. Батчевый опрос 3.3.4 (температура)
 // ================================================================
 async function checkDeviceBatch(userState) {
   const { appid, saler } = userState;
   const ids = userState.allDeviceIds;
   if (ids.length === 0) return;
 
-  // Берём следующий батч
   const offset = userState.batchOffset;
   const batch  = ids.slice(offset, offset + cfg.batchSize);
 
-  // Сдвигаем офсет
   userState.batchOffset = (offset + cfg.batchSize) >= ids.length
     ? 0
     : offset + cfg.batchSize;
@@ -186,17 +199,16 @@ async function checkDeviceBatch(userState) {
       await api.sleep(cfg.requestDelayMs);
       continue;
     }
+
     const d        = resp.data;
     const location = d.location || userState.devices.get(deviceId)?.location || deviceId;
 
-    // Обновляем кэш
     userState.devices.set(deviceId, {
       ...(userState.devices.get(deviceId) || {}),
       location,
       lastDetail: d,
     });
 
-    // -- Температура --
     if (d.temp !== undefined && d.temp !== null && d.temp !== '') {
       checkTemp(userState, deviceId, location, parseFloat(d.temp));
     }
@@ -206,7 +218,7 @@ async function checkDeviceBatch(userState) {
 }
 
 // ================================================================
-// Вспомогательная: проверка температуры
+// Проверка температуры
 // ================================================================
 function checkTemp(userState, deviceId, location, temp) {
   if (isNaN(temp)) return;
@@ -220,8 +232,10 @@ function checkTemp(userState, deviceId, location, temp) {
       msg:  t.alertTempLow(deviceId, location, temp),
     });
   } else {
-    state.resolveAlert(userState, keyLow,
-      t.alertResolved(deviceId, location, 'temp_low'));
+    if (userState.activeAlerts.has(keyLow)) {
+      state.resolveAlert(userState, keyLow,
+        t.alertResolved(deviceId, location, 'temp_low'));
+    }
   }
 
   if (temp > cfg.tempMax) {
@@ -230,20 +244,23 @@ function checkTemp(userState, deviceId, location, temp) {
       msg:  t.alertTempHigh(deviceId, location, temp),
     });
   } else {
-    state.resolveAlert(userState, keyHigh,
-      t.alertResolved(deviceId, location, 'temp_high'));
+    if (userState.activeAlerts.has(keyHigh)) {
+      state.resolveAlert(userState, keyHigh,
+        t.alertResolved(deviceId, location, 'temp_high'));
+    }
   }
 }
 
 // ================================================================
-// 4. Проверка QR пополнений и продаж без розлива
+// 4. QR пополнения и продажи без розлива
 // ================================================================
 async function checkQrPayments(userState) {
   const { appid, saler } = userState;
 
-  // Последние 15 минут
+  // Берём окно = QR_INTERVAL + запас 5 минут чтобы не пропустить записи
+  const windowMin = Math.ceil(QR_INTERVAL / 60000) + 5;
   const endTime   = dayjs().format('YYYY-MM-DD HH:mm:ss');
-  const beginTime = dayjs().subtract(15, 'minute').format('YYYY-MM-DD HH:mm:ss');
+  const beginTime = dayjs().subtract(windowMin, 'minute').format('YYYY-MM-DD HH:mm:ss');
 
   // QR пополнения
   const rechargeData = await api.getRechargeList(appid, saler, beginTime, endTime, 1);
@@ -256,21 +273,18 @@ async function checkQrPayments(userState) {
 
       if (!userState.sentQrPayments.has(payId)) {
         userState.sentQrPayments.add(payId);
-        // Не добавляем как activeAlert, просто уведомление
         userState.pendingAlerts.push({
           type: 'qr_payment',
           msg:  t.alertQrPayment(deviceId, location, amount),
         });
-        // Очищаем старые записи (хранить не более 500)
         if (userState.sentQrPayments.size > 500) {
-          const iter = userState.sentQrPayments.values();
-          userState.sentQrPayments.delete(iter.next().value);
+          userState.sentQrPayments.delete(userState.sentQrPayments.values().next().value);
         }
       }
     }
   }
 
-  // Продажи без розлива: оплата прошла (status=finished) но water1=0 и water2=0
+  // Продажи без розлива
   const consumeData = await api.getConsumeList(appid, saler, beginTime, endTime, 1);
   if (consumeData && consumeData.code === 0 && Array.isArray(consumeData.data)) {
     for (const rec of consumeData.data) {
@@ -279,17 +293,15 @@ async function checkQrPayments(userState) {
       const water2 = parseFloat(rec.water2 || 0);
       const cost   = parseFloat(rec.cost_value || rec.value || 0);
 
-      // Продажа без розлива: деньги списаны, воды не выдано
       if (cost > 0 && water1 === 0 && water2 === 0) {
         const noDispKey = `no_dispense_${payId}`;
         if (!userState.sentQrPayments.has(noDispKey)) {
           userState.sentQrPayments.add(noDispKey);
           const deviceId = rec.shop_num || rec.card_num;
           const location = rec.location || userState.devices.get(deviceId)?.location || deviceId;
-          const amount   = cost.toFixed(2);
           userState.pendingAlerts.push({
             type: 'no_dispense',
-            msg:  t.alertNoDispense(deviceId, location, amount),
+            msg:  t.alertNoDispense(deviceId, location, cost.toFixed(2)),
           });
         }
       }
@@ -298,7 +310,7 @@ async function checkQrPayments(userState) {
 }
 
 // ================================================================
-// 5. Проверка SIM карт
+// 5. SIM карты
 // ================================================================
 async function checkSimCards(userState) {
   const { appid, saler } = userState;
@@ -348,11 +360,10 @@ async function checkDailyReport(userState) {
   if (userState.lastDailyReportDate === date) return;
   userState.lastDailyReportDate = date;
 
-  const yesterday  = now.subtract(1, 'day').format('YYYY-MM-DD');
-  const beginTime  = `${yesterday} 00:00:00`;
-  const endTime    = `${yesterday} 23:59:59`;
+  const yesterday = now.subtract(1, 'day').format('YYYY-MM-DD');
+  const beginTime = `${yesterday} 00:00:00`;
+  const endTime   = `${yesterday} 23:59:59`;
 
-  // Собираем все страницы
   const allRecords = [];
   let page = 1;
   while (true) {
@@ -364,7 +375,6 @@ async function checkDailyReport(userState) {
     await api.sleep(cfg.requestDelayMs);
   }
 
-  // Группируем по устройству
   const byDevice = {};
   for (const rec of allRecords) {
     const deviceId = rec.shop_num || rec.card_num;
@@ -390,9 +400,9 @@ async function checkDailyReport(userState) {
   }
 
   userState.pendingAlerts.push({
-    type:    'daily_report',
+    type:     'daily_report',
     isReport: true,
-    msg:     lines.join('\n'),
+    msg:      lines.join('\n'),
   });
 
   logger.info(`[${saler}] Daily report prepared for ${yesterday}`);
