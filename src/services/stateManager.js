@@ -1,6 +1,5 @@
 // src/services/stateManager.js
 // Хранит состояние всех пользователей и аппаратов в памяти
-// При перезапуске бота состояние сбрасывается (можно добавить SQLite позже)
 'use strict';
 
 const dayjs = require('dayjs');
@@ -10,30 +9,30 @@ const users = new Map();
 
 function createUserState(chatId, appid, saler) {
   return {
-    chatId,
+    chatId: String(chatId),
     appid,
     saler,
     registeredAt: Date.now(),
-    muteUntil: null,          // timestamp до которого заглушены уведомления
+    muteUntil: null,
 
-    // Кэш устройств: deviceId -> { location, lastSeen, ... }
+    // Кэш устройств
     devices: new Map(),
 
-    // Активные проблемы: ключ -> { type, deviceId, location, since, ... }
+    // Активные проблемы
     activeAlerts: new Map(),
 
-    // Накопленные алерты для отправки в следующем цикле
+    // Накопленные алерты для отправки
     pendingAlerts: [],
 
-    // Уже отправленные QR платежи (pay_id) чтобы не дублировать
+    // Уже отправленные QR платежи
     sentQrPayments: new Set(),
 
-    // Батчинг: текущий офсет для опроса 3.3.4
+    // Батчинг устройств
     batchOffset: 0,
-    allDeviceIds: [],         // все ID устройств (обновляется раз в 10 мин)
+    allDeviceIds: [],
     deviceIdsLastUpdate: 0,
 
-    // Последний ежедневный отчёт (дата)
+    // Ежедневный отчёт
     lastDailyReportDate: null,
   };
 }
@@ -43,10 +42,11 @@ function getUser(chatId) {
 }
 
 function setUser(chatId, appid, saler) {
-  const existing = users.get(String(chatId));
-  if (existing) return existing; // уже есть
-  const state = createUserState(String(chatId), appid, saler);
-  users.set(String(chatId), state);
+  chatId = String(chatId);
+  if (users.has(chatId)) return users.get(chatId);
+
+  const state = createUserState(chatId, appid, saler);
+  users.set(chatId, state);
   return state;
 }
 
@@ -54,41 +54,63 @@ function getAllUsers() {
   return Array.from(users.values());
 }
 
+/** Возвращает всех пользователей с данным saler (главное исправление) */
+function getUsersBySaler(saler) {
+  return getAllUsers().filter(u => u.saler === saler);
+}
+
 function isMuted(userState) {
-  if (!userState.muteUntil) return false;
+  if (!userState?.muteUntil) return false;
   return Date.now() < userState.muteUntil;
 }
 
 function mute(userState, hours = 1) {
-  userState.muteUntil = Date.now() + hours * 3600 * 1000;
+  if (userState) userState.muteUntil = Date.now() + hours * 3600 * 1000;
 }
 
 function unmute(userState) {
-  userState.muteUntil = null;
+  if (userState) userState.muteUntil = null;
 }
 
-// ----------------------------------------------------------------
-// Управление активными алертами
-// ----------------------------------------------------------------
+// ================================================================
+// Работа с алертами для всех пользователей одного saler
+// ================================================================
 
-// Добавить/обновить алерт
-function setAlert(userState, key, alertObj) {
-  if (!userState.activeAlerts.has(key)) {
-    userState.activeAlerts.set(key, { ...alertObj, since: Date.now() });
-    userState.pendingAlerts.push(alertObj);
+/** Добавить алерт ВСЕМ пользователям с этим saler */
+function addAlertToAll(saler, key, alertObj) {
+  const usersWithSaler = getUsersBySaler(saler);
+  for (const userState of usersWithSaler) {
+    if (!userState.activeAlerts.has(key)) {
+      userState.activeAlerts.set(key, { ...alertObj, since: Date.now() });
+      userState.pendingAlerts.push({ ...alertObj });
+    }
   }
 }
 
-// Убрать алерт (проблема решена) — добавить уведомление о восстановлении
-function resolveAlert(userState, key, resolvedMsg) {
-  if (userState.activeAlerts.has(key)) {
-    userState.activeAlerts.delete(key);
-    if (resolvedMsg) userState.pendingAlerts.push({ resolved: true, msg: resolvedMsg });
+/** Снять алерт у всех пользователей с этим saler */
+function resolveAlertForAll(saler, key, resolvedMsg) {
+  const usersWithSaler = getUsersBySaler(saler);
+  for (const userState of usersWithSaler) {
+    if (userState.activeAlerts.has(key)) {
+      userState.activeAlerts.delete(key);
+      if (resolvedMsg) {
+        userState.pendingAlerts.push({ resolved: true, msg: resolvedMsg });
+      }
+    }
   }
 }
 
-// Забрать и очистить накопленные алерты
+/** Добавить обычный pending alert всем пользователям с этим saler */
+function addPendingAlertToAll(saler, alertObj) {
+  const usersWithSaler = getUsersBySaler(saler);
+  for (const userState of usersWithSaler) {
+    userState.pendingAlerts.push({ ...alertObj });
+  }
+}
+
+/** Забрать и очистить накопленные алерты для конкретного пользователя */
 function flushPendingAlerts(userState) {
+  if (!userState) return [];
   const alerts = [...userState.pendingAlerts];
   userState.pendingAlerts = [];
   return alerts;
@@ -98,10 +120,12 @@ module.exports = {
   getUser,
   setUser,
   getAllUsers,
+  getUsersBySaler,
   isMuted,
   mute,
   unmute,
-  setAlert,
-  resolveAlert,
+  addAlertToAll,
+  resolveAlertForAll,
+  addPendingAlertToAll,
   flushPendingAlerts,
 };
