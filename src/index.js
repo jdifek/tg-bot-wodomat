@@ -18,7 +18,18 @@ const cmds    = require('./commands');
 // Инициализация бота
 // ================================================================
 const bot = new Telegraf(cfg.botToken);
-
+bot.catch((err, ctx) => {
+  logger.error('🔥 TELEGRAM ERROR');
+  logger.error(err.stack || err);
+});
+bot.use(async (ctx, next) => {
+  try {
+    return await next();
+  } catch (err) {
+    logger.error('🔥 MIDDLEWARE ERROR');
+    logger.error(err.stack || err);
+  }
+});
 // ---- Команды ----
 bot.start(cmds.handleStart);
 bot.command('status',  cmds.handleStatus);
@@ -38,11 +49,13 @@ bot.hears('/mute',    cmds.handleMute);
 bot.hears('/unmute',  cmds.handleUnmute);
 bot.hears('/help',    cmds.handleHelp);
 
+
 bot.on('message', (ctx) => {
   const text = ctx.message?.text || '';
   if (!text.startsWith('/')) return;
   ctx.reply(require('./locales/' + cfg.locale).cmdUnknown, { parse_mode: 'Markdown' });
 });
+
 
 // ================================================================
 // Планировщик мониторинга
@@ -62,11 +75,18 @@ cron.schedule('*/10 * * * *', async () => {
   const shouldRunQrPayments = (cycleCounter % 3 === 0);
 
   // Запускаем мониторинг для всех пользователей
-  await Promise.all(users.map(u => monitor.runMonitorCycle(u, {
-    checkDeviceDetail: true,   // каждые 10 минут
-    checkExceptions:   true,   // каждые 10 минут
-    checkQrPayments:   shouldRunQrPayments,  // каждые 30 минут
-  })));
+  for (const u of users) {
+    try {
+      await monitor.runMonitorCycle(u, {
+        checkDeviceDetail: true,
+        checkExceptions: true,
+        checkQrPayments: shouldRunQrPayments,
+      });
+    } catch (err) {
+      logger.error(`🔥 MONITOR ERROR user=${u.id}`);
+      logger.error(err.stack || err);
+    }
+  }
 
   cycleCounter++;
 
@@ -95,6 +115,15 @@ async function main() {
   logger.info('✅ Bot launched successfully');
   logger.info(`🔗 Start link format: https://t.me/<BOT_USERNAME>?start=APPID_<appid>_SALER_<saler>`);
 }
+process.on('uncaughtException', (err) => {
+  logger.error('🔥 uncaughtException');
+  logger.error(err.stack || err);
+});
+
+process.on('unhandledRejection', (err) => {
+  logger.error('🔥 unhandledRejection');
+  logger.error(err?.stack || err);
+});
 
 main().catch(err => {
   logger.error(`Fatal error: ${err.message}`);
