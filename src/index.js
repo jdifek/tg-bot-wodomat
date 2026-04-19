@@ -99,6 +99,9 @@ cron.schedule('*/10 * * * *', async () => {
 // Запуск
 // ================================================================
 async function main() {
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    logger.info('Railway detected - single instance mode');
+  }
   logger.info('='.repeat(50));
   logger.info('🤖 Watermat Monitor Bot starting...');
   logger.info(`📍 Locale: ${cfg.locale.toUpperCase()}`);
@@ -110,9 +113,10 @@ async function main() {
   logger.info('   - QR/Sales: every 30 minutes');
   logger.info('   - SIM cards: every 60 minutes');
   logger.info('='.repeat(50));
-
-  await bot.launch();
-  logger.info('✅ Bot launched successfully');
+  bot.telegram.deleteWebhook({ drop_pending_updates: true });
+  await bot.launch({
+    dropPendingUpdates: true
+  });  logger.info('✅ Bot launched successfully');
   logger.info(`🔗 Start link format: https://t.me/<BOT_USERNAME>?start=APPID_<appid>_SALER_<saler>`);
 }
 process.on('uncaughtException', (err) => {
