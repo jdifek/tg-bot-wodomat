@@ -16,30 +16,20 @@ const sender = require('./services/sender');
 const t = require('./locales/' + cfg.locale);
 
 // ================================================================
-// Утилиты времени (чтобы отчёт совпадал с дашбордом)
+// Утилиты времени
 // ================================================================
 
-/**
- * Возвращает сегодняшний день по Варшаве (Europe/Warsaw)
- */
 function getWarsawToday() {
   return dayjs().tz('Europe/Warsaw').format('YYYY-MM-DD');
 }
 
-/**
- * Начало дня по Варшаве → формат для API (UTC+8)
- */
 function dayStartWarsaw(dateStr) {
-  // dateStr = '2026-04-18'
   return dayjs.tz(`${dateStr} 00:00:00`, 'Europe/Warsaw')
     .utc()
     .add(8, 'hour')
     .format('YYYY-MM-DD HH:mm:ss');
 }
 
-/**
- * Конец дня по Варшаве → формат для API (UTC+8)
- */
 function dayEndWarsaw(dateStr) {
   return dayjs.tz(`${dateStr} 23:59:59`, 'Europe/Warsaw')
     .utc()
@@ -48,7 +38,7 @@ function dayEndWarsaw(dateStr) {
 }
 
 // ================================================================
-// /start — инициализация пользователя
+// /start
 // ================================================================
 async function handleStart(ctx) {
   const chatId = String(ctx.chat.id);
@@ -72,14 +62,14 @@ async function handleStart(ctx) {
   }
 
   if (!appid || !saler) {
-    return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
+    return ctx.reply('❌ Nieprawidłowy link startowy', { parse_mode: 'Markdown' });
   }
 
-  await ctx.reply('⏳ Проверяем подключение к API...');
+  await ctx.reply('⏳ Sprawdzanie połączenia z API...');
   const ok = await api.testAuth(appid, saler);
 
   if (!ok) {
-    return ctx.reply(t.authFailed, { parse_mode: 'Markdown' });
+    return ctx.reply('❌ Błąd autoryzacji', { parse_mode: 'Markdown' });
   }
 
   state.setUser(chatId, appid, saler);
@@ -99,7 +89,7 @@ async function handleStart(ctx) {
 }
 
 // ================================================================
-// /status — общий статус
+// /status
 // ================================================================
 async function handleStatus(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
@@ -119,64 +109,60 @@ async function handleStatus(ctx) {
     t.totalDevices(total),
     alerts > 0 ? t.activeAlerts(alerts) : t.noAlerts,
     '',
-    `🏪 Аккаунт: \`${userState.saler}\``,
-    `🕐 Обновлено: ${dayjs().format('DD.MM HH:mm')}`,
+    `🏪 Konto: \`${userState.saler}\``,
+    `🕐 Zaktualizowano: ${dayjs().format('DD.MM HH:mm')}`,
   ];
 
   await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
 }
 
 // ================================================================
-// /devices — список аппаратов
+// /devices
 // ================================================================
 async function handleDevices(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
 
-  const lines = [t.devicesHeader];
+  const lines = ['📟 Lista urządzeń:'];
 
   if (userState.allDeviceIds.length === 0) {
-    lines.push(t.devicesEmpty);
+    lines.push('Brak urządzeń');
   } else {
     for (const id of userState.allDeviceIds) {
       const d = userState.devices.get(id);
       const loc = d?.location || id;
       const isOff = userState.activeAlerts.has(`offline_${id}`);
-      lines.push(t.deviceLine(id, loc, isOff ? 'offline' : 'online'));
+      lines.push(`${id} — ${loc} — ${isOff ? 'offline' : 'online'}`);
     }
   }
 
-  // Разбиваем на части, если очень много устройств
   const text = lines.join('\n');
   const STEP = 50;
   const lineArr = text.split('\n');
-  const chunks = [];
 
   for (let i = 0; i < lineArr.length; i += STEP) {
-    chunks.push(lineArr.slice(i, i + STEP).join('\n'));
-  }
-
-  for (const chunk of chunks) {
-    await ctx.reply(chunk, { parse_mode: 'Markdown' });
+    await ctx.reply(lineArr.slice(i, i + STEP).join('\n'), {
+      parse_mode: 'Markdown',
+    });
   }
 }
 
 // ================================================================
-// /alerts — активные проблемы
+// /alerts
 // ================================================================
 async function handleAlerts(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
 
   if (userState.activeAlerts.size === 0) {
-    return ctx.reply(t.noAlerts, { parse_mode: 'Markdown' });
+    return ctx.reply('Brak aktywnych problemów', { parse_mode: 'Markdown' });
   }
 
-  const lines = [`⚠️ *Активные проблемы (${userState.activeAlerts.size}):*\n`];
+  const lines = [`⚠️ *Aktywne problemy (${userState.activeAlerts.size}):*\n`];
 
   for (const [key, alert] of userState.activeAlerts) {
     const since = dayjs(alert.since).format('DD.MM HH:mm');
-    lines.push(`${alert.msg}\n⏱ _с ${since}_`);
+    lines.push(`${alert.msg}\n⏱ _od ${since}_`);
     lines.push('──────────────');
   }
 
@@ -184,21 +170,21 @@ async function handleAlerts(ctx) {
 }
 
 // ================================================================
-// /report — отчёт за сегодня (исправлено по Warsaw timezone)
+// /report
 // ================================================================
 async function handleReport(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
 
-  await ctx.reply('⏳ Запрашиваем данные...');
+  await ctx.reply('⏳ Pobieranie danych...');
 
   const { appid, saler } = userState;
 
-  const todayStr = getWarsawToday();                    // Сегодня по Варшаве
-  const beginTime = dayStartWarsaw(todayStr);           // Для API (UTC+8)
-  const endTime = dayEndWarsaw(todayStr);               // Для API (UTC+8)
+  const todayStr = getWarsawToday();
+  const beginTime = dayStartWarsaw(todayStr);
+  const endTime = dayEndWarsaw(todayStr);
 
-  logger.info(`[Report] Запрос данных за ${todayStr} | begin: ${beginTime} | end: ${endTime}`);
+  logger.info(`[Report] ${todayStr} | ${beginTime} - ${endTime}`);
 
   const allRecords = [];
   let page = 1;
@@ -206,9 +192,7 @@ async function handleReport(ctx) {
   while (true) {
     const data = await api.getConsumeList(appid, saler, beginTime, endTime, page);
 
-    if (!data || data.code !== 0 || !Array.isArray(data.data) || data.data.length === 0) {
-      break;
-    }
+    if (!data || data.code !== 0 || !data.data?.length) break;
 
     allRecords.push(...data.data);
 
@@ -216,10 +200,8 @@ async function handleReport(ctx) {
     page++;
   }
 
-  logger.info(`[Report] Получено записей: ${allRecords.length}`);
-
-  // Агрегация по устройствам
   const byDevice = {};
+
   for (const rec of allRecords) {
     const deviceId = rec.shop_num || rec.card_num || rec.device;
     if (!deviceId) continue;
@@ -235,44 +217,44 @@ async function handleReport(ctx) {
   }
 
   let totalL = 0, totalA = 0;
-  const lines = [t.reportHeader(todayStr)];
+  const lines = [`📊 Raport za ${todayStr}`];
 
   const entries = Object.values(byDevice);
 
-  if (entries.length === 0) {
-    lines.push(t.reportEmpty);
+  if (!entries.length) {
+    lines.push('Brak danych');
   } else {
     for (const e of entries) {
-      lines.push(t.reportLine(e.location, e.liters.toFixed(1), e.amount.toFixed(2)));
+      lines.push(`${e.location} — ${e.liters.toFixed(1)} L — ${e.amount.toFixed(2)} zł`);
       totalL += e.liters;
       totalA += e.amount;
     }
-    lines.push(t.reportTotal(totalL.toFixed(1), totalA.toFixed(2)));
+    lines.push(`TOTAL: ${totalL.toFixed(1)} L — ${totalA.toFixed(2)} zł`);
   }
 
   await sender.safeSend({ telegram: ctx.telegram }, String(ctx.chat.id), lines.join('\n'));
 }
 
 // ================================================================
-// /mute — тишина на 1 час
+// /mute
 // ================================================================
 async function handleMute(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return;
 
   state.mute(userState, 1);
-  await ctx.reply(t.mutedFor(1), { parse_mode: 'Markdown' });
+  await ctx.reply('🔕 Powiadomienia wyciszone na 1 godzinę');
 }
 
 // ================================================================
-// /unmute — включить уведомления
+// /unmute
 // ================================================================
 async function handleUnmute(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return;
 
   state.unmute(userState);
-  await ctx.reply(t.unmuted, { parse_mode: 'Markdown' });
+  await ctx.reply('🔔 Powiadomienia włączone');
 }
 
 // ================================================================
@@ -282,7 +264,6 @@ async function handleHelp(ctx) {
   await ctx.reply(t.cmdHelp, { parse_mode: 'Markdown' });
 }
 
-// ================================================================
 module.exports = {
   handleStart,
   handleStatus,
