@@ -64,33 +64,26 @@ async function sendAlertsBatch(bot, chatId, alerts) {
 // Безопасная отправка с обработкой лимитов Telegram
 // ================================================================
 async function safeSend(bot, chatId, text) {
-  if (!text || typeof text !== 'string') return;
+  // Поддерживаем оба варианта: bot (Telegraf) и { telegram } и ctx.telegram напрямую
+  const telegram = bot?.telegram ?? bot;
+  
+  if (!telegram?.sendMessage) {
+    logger.error(`safeSend: invalid bot object for chatId=${chatId}`);
+    return;
+  }
 
   try {
-    // Telegram лимит — 4096 символов
     if (text.length > 4000) {
-      const parts = splitText(text, 4000);
-
-      for (const part of parts) {
-        await bot.telegram.sendMessage(chatId, part, {
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true,
-        });
-        await sleep(150); // чуть больше задержки при разбиении длинных сообщений
+      for (const part of splitText(text, 4000)) {
+        await telegram.sendMessage(chatId, part, { parse_mode: 'Markdown', disable_web_page_preview: true });
+        await sleep(150);
       }
     } else {
-      await bot.telegram.sendMessage(chatId, text, {
-        parse_mode: 'Markdown',
-        disable_web_page_preview: true,
-      });
+      await telegram.sendMessage(chatId, text, { parse_mode: 'Markdown', disable_web_page_preview: true });
     }
   } catch (err) {
     logger.error(`Failed to send message to ${chatId}: ${err.message}`);
-    
-    // Дополнительно можно логировать chatId и длину текста при частых ошибках
-    if (err.code === 429) {
-      logger.warn(`Rate limit hit for chat ${chatId}`);
-    }
+    if (err.code === 429) logger.warn(`Rate limit hit for chat ${chatId}`);
   }
 }
 

@@ -180,7 +180,7 @@ async function handleAlerts(ctx) {
     lines.push('──────────────');
   }
 
-  await sender.safeSend(ctx.telegram || ctx, String(ctx.chat.id), lines.join('\n'));
+  await sender.safeSend({ telegram: ctx.telegram }, String(ctx.chat.id), lines.join('\n'));
 }
 
 // ================================================================
