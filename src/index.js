@@ -4,15 +4,15 @@
 require('dotenv').config();
 
 const { Telegraf } = require('telegraf');
-const cron         = require('node-cron');
-const dayjs        = require('dayjs');
+const cron = require('node-cron');
+const dayjs = require('dayjs');
 
-const cfg     = require('./config');
-const logger  = require('./logger');
-const state   = require('./services/stateManager');
+const cfg = require('./config');
+const logger = require('./logger');
+const state = require('./services/stateManager');
 const monitor = require('./services/monitor');
-const sender  = require('./services/sender');
-const cmds    = require('./commands');
+const sender = require('./services/sender');
+const cmds = require('./commands');
 
 // ================================================================
 // Инициализация бота
@@ -32,22 +32,22 @@ bot.use(async (ctx, next) => {
 });
 // ---- Команды ----
 bot.start(cmds.handleStart);
-bot.command('status',  cmds.handleStatus);
+bot.command('status', cmds.handleStatus);
 bot.command('devices', cmds.handleDevices);
-bot.command('alerts',  cmds.handleAlerts);
-bot.command('report',  cmds.handleReport);
-bot.command('mute',    cmds.handleMute);
-bot.command('unmute',  cmds.handleUnmute);
-bot.command('help',    cmds.handleHelp);
+bot.command('alerts', cmds.handleAlerts);
+bot.command('report', cmds.handleReport);
+bot.command('mute', cmds.handleMute);
+bot.command('unmute', cmds.handleUnmute);
+bot.command('help', cmds.handleHelp);
 
 // Кнопки клавиатуры (текстовые команды)
-bot.hears('/status',  cmds.handleStatus);
+bot.hears('/status', cmds.handleStatus);
 bot.hears('/devices', cmds.handleDevices);
-bot.hears('/alerts',  cmds.handleAlerts);
-bot.hears('/report',  cmds.handleReport);
-bot.hears('/mute',    cmds.handleMute);
-bot.hears('/unmute',  cmds.handleUnmute);
-bot.hears('/help',    cmds.handleHelp);
+bot.hears('/alerts', cmds.handleAlerts);
+bot.hears('/report', cmds.handleReport);
+bot.hears('/mute', cmds.handleMute);
+bot.hears('/unmute', cmds.handleUnmute);
+bot.hears('/help', cmds.handleHelp);
 
 
 bot.on('message', (ctx) => {
@@ -113,10 +113,10 @@ async function main() {
   logger.info('   - QR/Sales: every 30 minutes');
   logger.info('   - SIM cards: every 60 minutes');
   logger.info('='.repeat(50));
-  bot.telegram.deleteWebhook({ drop_pending_updates: true });
-  await bot.launch({
-    dropPendingUpdates: true
-  });  logger.info('✅ Bot launched successfully');
+  await bot.telegram.deleteWebhook({
+    drop_pending_updates: true
+  });
+  logger.info('✅ Bot launched successfully');
   logger.info(`🔗 Start link format: https://t.me/<BOT_USERNAME>?start=APPID_<appid>_SALER_<saler>`);
 }
 process.on('uncaughtException', (err) => {
@@ -135,5 +135,5 @@ main().catch(err => {
 });
 
 // Graceful shutdown
-process.once('SIGINT',  () => { logger.info('SIGINT received'); bot.stop('SIGINT');  });
+process.once('SIGINT', () => { logger.info('SIGINT received'); bot.stop('SIGINT'); });
 process.once('SIGTERM', () => { logger.info('SIGTERM received'); bot.stop('SIGTERM'); });
