@@ -99,25 +99,28 @@ cron.schedule('*/10 * * * *', async () => {
 // Запуск
 // ================================================================
 async function main() {
-  if (process.env.RAILWAY_ENVIRONMENT) {
-    logger.info('Railway detected - single instance mode');
+  try {
+    if (process.env.RAILWAY_ENVIRONMENT) {
+      logger.info('Railway detected - single instance mode');
+    }
+
+    logger.info('Starting bot...');
+
+    await bot.telegram.deleteWebhook({
+      drop_pending_updates: true
+    });
+
+    await bot.launch({
+      dropPendingUpdates: true
+    });
+
+    logger.info('✅ Bot launched successfully');
+
+  } catch (err) {
+    logger.error('🔥 BOT START CRASH');
+    logger.error(err.stack || err);
+    process.exit(1);
   }
-  logger.info('='.repeat(50));
-  logger.info('🤖 Watermat Monitor Bot starting...');
-  logger.info(`📍 Locale: ${cfg.locale.toUpperCase()}`);
-  logger.info(`📤 Alert interval: every poll (10 min)`);
-  logger.info(`📦 Batch size: ${cfg.batchSize}`);
-  logger.info('🔄 Check intervals:');
-  logger.info('   - Device details: every 10 minutes');
-  logger.info('   - Exceptions: every 10 minutes');
-  logger.info('   - QR/Sales: every 30 minutes');
-  logger.info('   - SIM cards: every 60 minutes');
-  logger.info('='.repeat(50));
-  await bot.telegram.deleteWebhook({
-    drop_pending_updates: true
-  });
-  logger.info('✅ Bot launched successfully');
-  logger.info(`🔗 Start link format: https://t.me/<BOT_USERNAME>?start=APPID_<appid>_SALER_<saler>`);
 }
 process.on('uncaughtException', (err) => {
   logger.error('🔥 uncaughtException');
