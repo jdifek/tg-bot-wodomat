@@ -1,4 +1,3 @@
-// src/index.js — точка входа
 'use strict';
 
 require('dotenv').config();
@@ -13,6 +12,7 @@ const state = require('./services/stateManager');
 const monitor = require('./services/monitor');
 const sender = require('./services/sender');
 const cmds = require('./commands');
+const { acquireLock, releaseLock } = require('./lockfile');
 
 // ================================================================
 // Инициализация бота
@@ -99,17 +99,37 @@ cron.schedule('*/10 * * * *', async () => {
 // Запуск
 // ================================================================
 async function main() {
+  // Проверяем lock file
+  if (!acquireLock()) {
+    logger.error('❌ Another bot instance is already running. Exiting.');
+    process.exit(0);
+  }
+
   try {
     if (process.env.RAILWAY_ENVIRONMENT) {
       logger.info('Railway detected - single instance mode');
+      // Даём время предыдущему инстансу завершиться
+      logger.info('Waiting 10 seconds for previous instance to terminate...');
+      await new Promise(resolve => setTimeout(resolve, 10000));
     }
 
     logger.info('Starting bot...');
 
-    await bot.telegram.deleteWebhook({
-      drop_pending_updates: true
-    });
+    // Принудительно удаляем webhook и pending updates
+    try {
+      await bot.telegram.deleteWebhook({
+        drop_pending_updates: true
+      });
+      logger.info('Webhook deleted successfully');
+    } catch (err) {
+      logger.warn('Failed to delete webhook: ' + err.message);
+    }
 
+    // Небольшая пауза после удаления webhook
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    logger.info('Launching bot with polling...');
+    
     await bot.launch({
       dropPendingUpdates: true
     });
@@ -119,24 +139,39 @@ async function main() {
   } catch (err) {
     logger.error('🔥 BOT START CRASH');
     logger.error(err.stack || err);
+    
+    releaseLock();
     process.exit(1);
   }
 }
+
 process.on('uncaughtException', (err) => {
   logger.error('🔥 uncaughtException');
   logger.error(err.stack || err);
+  releaseLock();
 });
 
 process.on('unhandledRejection', (err) => {
   logger.error('🔥 unhandledRejection');
   logger.error(err?.stack || err);
+  releaseLock();
+});
+
+// Graceful shutdown
+process.once('SIGINT', () => { 
+  logger.info('SIGINT received'); 
+  releaseLock();
+  bot.stop('SIGINT'); 
+});
+
+process.once('SIGTERM', () => { 
+  logger.info('SIGTERM received'); 
+  releaseLock();
+  bot.stop('SIGTERM'); 
 });
 
 main().catch(err => {
   logger.error(`Fatal error: ${err.message}`);
+  releaseLock();
   process.exit(1);
 });
-
-// Graceful shutdown
-process.once('SIGINT', () => { logger.info('SIGINT received'); bot.stop('SIGINT'); });
-process.once('SIGTERM', () => { logger.info('SIGTERM received'); bot.stop('SIGTERM'); });
