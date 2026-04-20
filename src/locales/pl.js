@@ -23,7 +23,6 @@ module.exports = {
   cmdStatus: `📊 *Status monitorowania*`,
   cmdHelp:
     `📖 *Dostępne polecenia:*\n\n` +
-    `/status — status monitorowania i lista automatów\n` +
     `/devices — lista wszystkich automatów\n` +
     `/report — raport sprzedaży za dzisiaj\n` +
     `/alerts — pokaż aktywne problemy\n` +
