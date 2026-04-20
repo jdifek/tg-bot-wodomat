@@ -79,9 +79,9 @@ async function handleStart(ctx) {
     parse_mode: 'Markdown',
     reply_markup: {
       keyboard: [
-        [{ text: '/status' }, { text: '/devices' }],
-        [{ text: '/alerts' }, { text: '/report' }],
-        [{ text: '/mute' }, { text: '/help' }],
+        [{ text: '/devices' }, { text: '/alerts' }],
+        [{ text: '/report' }, { text: '/mute' }],
+        [{ text: '/unmute' }, { text: '/help' }],
       ],
       resize_keyboard: true,
     },
@@ -132,8 +132,10 @@ async function handleDevices(ctx) {
       const d = userState.devices.get(id);
       const loc = d?.location || id;
       const isOff = userState.activeAlerts.has(`offline_${id}`);
-      lines.push(`${id} — ${loc} — ${isOff ? 'offline' : 'online'}`);
-    }
+      const lastConn = d?.lastConnect
+      ? `(${dayjs(d.lastConnect).format('DD.MM HH:mm')})`
+      : '';
+    lines.push(`${id} — ${loc} — ${isOff ? '🔴 offline' : '🟢 online'} ${lastConn}`);    }
   }
 
   const text = lines.join('\n');

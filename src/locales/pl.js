@@ -157,20 +157,26 @@ module.exports = {
     `🔢 ICCID: \`${iccid}\`\n` +
     `💡 Dokonaj opłaty za monitoring natychmiast`,
 
-  // Anomalie wody/ciśnienia z API
-  alertWaterLevel: (deviceId, location, level) =>
-    `🚱 *PROBLEM Z POZIOMEM WODY*\n` +
+ // В pl.js — единый маппинг для уровня воды и давления
+alertWaterPressure: (deviceId, location, pressure) => {
+  const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
+  const pressurePL = STATUS_MAP[pressure] || pressure;
+  return `💨 *PROBLEM Z CIŚNIENIEM WODY*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
-    `📊 Status: ${level}\n` +
-    `💡 Sprawdź zawór dopływu wody, działanie membran i pomp`,
+    `📊 Status ciśnienia: ${pressurePL}\n` +
+    `💡 Sprawdź podłączenie wodociągu`;
+},
 
-  alertWaterPressure: (deviceId, location, pressure) =>
-    `💨 *PROBLEM Z CIŚNIENIEM WODY*\n` +
+alertWaterLevel: (deviceId, location, level) => {
+  const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
+  const levelPL = STATUS_MAP[level] || level;
+  return `🚱 *PROBLEM Z POZIOMEM WODY*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
-    `📊 Status ciśnienia: ${pressure}\n` +
-    `💡 Sprawdź podłączenie wodociągu`,
+    `📊 Status: ${levelPL}\n` +
+    `💡 Sprawdź zawór dopływu wody, działanie membran i pomp`;
+},
 
   // Problem rozwiązany
   alertResolved: (deviceId, location, type) =>

@@ -121,7 +121,14 @@ async function checkExceptions(userState) {
     for (const item of items) {
       const deviceId = item.deviceId;
       const location = item.name || userState.devices.get(deviceId)?.location || deviceId;
-
+      if (item.lastConnect) {
+        const dev = userState.devices.get(deviceId) || {};
+        userState.devices.set(deviceId, {
+          ...dev,
+          location,
+          lastConnect: item.lastConnect,
+        });
+      }
       // ── Оффлайн ──
       const alertKeyOffline = `offline_${deviceId}`;
       const isOfflineByStatus = item.statusMsg === '离线';
