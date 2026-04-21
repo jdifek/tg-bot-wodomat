@@ -145,7 +145,7 @@ async function checkExceptions(userState) {
         const offlineMins = diffMin > 0 ? diffMin : cfg.offlineMinutes;
         state.addAlertToAll(saler, alertKeyOffline, {
           type: 'offline',
-          msg: t.alertOffline(deviceId, location, offlineMins),
+          msg: t.alertOffline(deviceId, location, offlineMins, item.lastConnect),
         });
       } else {
         state.resolveAlertForAll(saler, alertKeyOffline, t.alertStatusOnline(deviceId, location));
@@ -156,7 +156,7 @@ async function checkExceptions(userState) {
       if (item.waterLevel && !NORMAL_VALUES.includes(item.waterLevel)) {
         state.addAlertToAll(saler, alertKeyWater, {
           type: 'water_level',
-          msg: t.alertWaterLevel(deviceId, location, item.waterLevel),
+          msg: t.alertWaterLevel(deviceId, location, item.waterLevel, item.lastConnect),
         });
       } else {
         state.resolveAlertForAll(saler, alertKeyWater, t.alertResolved(deviceId, location, 'water_level'));
@@ -167,7 +167,7 @@ async function checkExceptions(userState) {
       if (type !== 'shop_water' && item.waterPressure && !NORMAL_VALUES.includes(item.waterPressure)) {
         state.addAlertToAll(saler, alertKeyPressure, {
           type: 'water_pressure',
-          msg: t.alertWaterPressure(deviceId, location, item.waterPressure),
+          msg: t.alertWaterPressure(deviceId, location, item.waterPressure, item.lastConnect),
         });
       } else {
         state.resolveAlertForAll(saler, alertKeyPressure, t.alertResolved(deviceId, location, 'water_pressure'));
@@ -275,7 +275,7 @@ async function checkQrPayments(userState) {
 
       state.addPendingAlertToAll(saler, {
         type: 'qr_payment',
-        msg: t.alertQrPayment(deviceId, location, amount),
+        msg: t.alertQrPayment(deviceId, location, amount, rec.time),
       });
     }
   }
@@ -299,7 +299,7 @@ async function checkQrPayments(userState) {
 
         state.addPendingAlertToAll(saler, {
           type: 'no_dispense',
-          msg: t.alertNoDispense(deviceId, location, cost.toFixed(2)),
+          msg: t.alertNoDispense(deviceId, location, cost.toFixed(2), rec.time),
         });
       }
     }

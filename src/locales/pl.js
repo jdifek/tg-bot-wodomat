@@ -78,35 +78,39 @@ module.exports = {
     `💡 Sprawdź zawór dopływu wody, działanie membran i pomp`,
 
   // 2. Sprzedaż bez nalewania
-  alertNoDispense: (deviceId, location, amount) =>
+  alertNoDispense: (deviceId, location, amount, time) =>
     `💸 *SPRZEDAŻ BEZ NALEWANIA*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `💰 Kwota płatności: ${amount} zł\n` +
+    `🕐 Czas transakcji: ${time || '—'}\n` +
     `💡 Płatność zrealizowana, ale woda nie została wydana — sprawdź automat`,
 
   // 3a. Niska temperatura
-  alertTempLow: (deviceId, location, temp) =>
+  alertTempLow: (deviceId, location, temp, time) =>
     `🥶 *NISKA TEMPERATURA*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `🌡 Temperatura: *${temp}°C*\n` +
+    (time ? `🕐 Od: ${time}\n` : '') +
     `💡 Sprawdź zasilanie i system ogrzewania automatu`,
 
   // 3b. Wysoka temperatura
-  alertTempHigh: (deviceId, location, temp) =>
+  alertTempHigh: (deviceId, location, temp, time) =>
     `🔥 *WYSOKA TEMPERATURA*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `🌡 Temperatura: *${temp}°C*\n` +
+    (time ? `🕐 Od: ${time}\n` : '') +
     `💡 Sprawdź system chłodzenia i wentylację`,
 
   // 4. Offline ponad 15 minut
-  alertOffline: (deviceId, location, minutes) =>
+  alertOffline: (deviceId, location, minutes, lastConnect) =>
     `📵 *AUTOMAT BEZ POŁĄCZENIA*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `⏱ Brak połączenia: *${minutes} min.*\n` +
+    (lastConnect ? `🕐 Ostatnie połączenie: ${lastConnect}\n` : '') +
     `💡 Sprawdź zasilanie lub działanie karty SIM`,
 
   // 5. Dzienny raport sprzedaży
@@ -135,11 +139,12 @@ module.exports = {
     `💡 Możliwe problemy z automatem`,
 
   // 7. Doładowanie QR
-  alertQrPayment: (deviceId, location, amount) =>
+  alertQrPayment: (deviceId, location, amount, time) =>
     `💳 *ZDALNE DOŁADOWANIE QR*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
-    `💰 Kwota: *${amount} zł*`,
+    `💰 Kwota: *${amount} zł*\n` +
+    (time ? `🕐 Czas: ${time}\n` : ''),
 
   // 8. Wygasa opłata za monitoring (SIM)
   alertSimExpiring: (iccid, deviceLocation, daysLeft, expireDate) =>
@@ -156,28 +161,30 @@ module.exports = {
     `🔢 ICCID: \`${iccid}\`\n` +
     `💡 Dokonaj opłaty za monitoring natychmiast`,
 
- // В pl.js — единый маппинг для уровня воды и давления
-alertWaterPressure: (deviceId, location, pressure) => {
-  const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
-  const pressurePL = STATUS_MAP[pressure] || pressure;
-  return `💨 *PROBLEM Z CIŚNIENIEM WODY*\n` +
-    `📍 ${location}\n` +
-    `🔧 ID: \`${deviceId}\`\n` +
-    `📊 Status ciśnienia: ${pressurePL}\n` +
-    `💡 Sprawdź podłączenie wodociągu`;
-},
+  // 9. Anomalie wody/ciśnienia z API
+  alertWaterLevel: (deviceId, location, level, lastConnect) => {
+    const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
+    const levelPL = STATUS_MAP[level] || level;
+    return `🚱 *PROBLEM Z POZIOMEM WODY*\n` +
+      `📍 ${location}\n` +
+      `🔧 ID: \`${deviceId}\`\n` +
+      `📊 Status: ${levelPL}\n` +
+      (lastConnect ? `🕐 Od: ${lastConnect}\n` : '') +
+      `💡 Sprawdź zawór dopływu wody, działanie membran i pomp`;
+  },
 
-alertWaterLevel: (deviceId, location, level) => {
-  const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
-  const levelPL = STATUS_MAP[level] || level;
-  return `🚱 *PROBLEM Z POZIOMEM WODY*\n` +
-    `📍 ${location}\n` +
-    `🔧 ID: \`${deviceId}\`\n` +
-    `📊 Status: ${levelPL}\n` +
-    `💡 Sprawdź zawór dopływu wody, działanie membran i pomp`;
-},
+  alertWaterPressure: (deviceId, location, pressure, lastConnect) => {
+    const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
+    const pressurePL = STATUS_MAP[pressure] || pressure;
+    return `💨 *PROBLEM Z CIŚNIENIEM WODY*\n` +
+      `📍 ${location}\n` +
+      `🔧 ID: \`${deviceId}\`\n` +
+      `📊 Status ciśnienia: ${pressurePL}\n` +
+      (lastConnect ? `🕐 Od: ${lastConnect}\n` : '') +
+      `💡 Sprawdź podłączenie wodociągu`;
+  },
 
-  // Problem rozwiązany
+  // 10. Problem rozwiązany
   alertResolved: (deviceId, location, type) =>
     `✅ *PROBLEM ROZWIĄZANY*\n` +
     `📍 ${location}\n` +
