@@ -28,6 +28,11 @@ const NORMAL_VALUES = ['正常', 'normal', 'Normal', ''];
 function getWarsawNow() {
   return dayjs().tz('Europe/Warsaw');
 }
+function fromApiTime(apiTimeStr) {
+  if (!apiTimeStr) return null;
+  // API возвращает время в UTC+8, конвертируем в Europe/Warsaw
+  return dayjs.utc(apiTimeStr).subtract(8, 'hour').tz('Europe/Warsaw').format('DD.MM.YYYY HH:mm:ss');
+}
 
 /**
  * Конвертирует время Варшавы в формат, который ожидает API (UTC+8)
@@ -275,7 +280,7 @@ async function checkQrPayments(userState) {
 
       state.addPendingAlertToAll(saler, {
         type: 'qr_payment',
-        msg: t.alertQrPayment(deviceId, location, amount, rec.time),
+        msg: t.alertQrPayment(deviceId, location, amount, fromApiTime(rec.time)),
       });
     }
   }
@@ -299,7 +304,7 @@ async function checkQrPayments(userState) {
 
         state.addPendingAlertToAll(saler, {
           type: 'no_dispense',
-          msg: t.alertNoDispense(deviceId, location, cost.toFixed(2), rec.time),
+          msg: t.alertNoDispense(deviceId, location, cost.toFixed(2), fromApiTime(rec.time)),
         });
       }
     }
