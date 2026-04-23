@@ -310,6 +310,7 @@ async function checkQrPayments(userState) {
     }
   }
 
+  
   // Очистка старых записей
   if (userState.sentQrPayments.size > 500) {
     const first = userState.sentQrPayments.values().next().value;
