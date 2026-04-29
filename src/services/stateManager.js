@@ -3,9 +3,12 @@
 'use strict';
 
 const dayjs = require('dayjs');
+const fs = require('fs');
+const USERS_FILE = './data/users.json';
 
 // Map: telegramChatId -> UserState
 const users = new Map();
+const dailyReportSentByDate = new Map(); // saler -> date
 
 function createUserState(chatId, appid, saler) {
   return {
@@ -40,16 +43,15 @@ function createUserState(chatId, appid, saler) {
 function getUser(chatId) {
   return users.get(String(chatId)) || null;
 }
-
 function setUser(chatId, appid, saler) {
   chatId = String(chatId);
   if (users.has(chatId)) return users.get(chatId);
 
   const state = createUserState(chatId, appid, saler);
   users.set(chatId, state);
+  saveUsers(); // сохраняем при добавлении
   return state;
 }
-
 function getAllUsers() {
   return Array.from(users.values());
 }
@@ -115,11 +117,43 @@ function flushPendingAlerts(userState) {
   userState.pendingAlerts = [];
   return alerts;
 }
+function getDailyReportSent(saler) {
+  return dailyReportSentByDate.get(saler) || null;
+}
+function setDailyReportSent(saler, date) {
+  dailyReportSentByDate.set(saler, date);
+}
+function saveUsers() {
+  const data = getAllUsers().map(u => ({
+    chatId: u.chatId,
+    appid: u.appid,
+    saler: u.saler,
+  }));
+  fs.mkdirSync('./data', { recursive: true });
+  fs.writeFileSync(USERS_FILE, JSON.stringify(data));
+}
 
+function loadUsers() {
+  if (!fs.existsSync(USERS_FILE)) return;
+  try {
+    const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    for (const u of data) {
+      users.set(u.chatId, createUserState(u.chatId, u.appid, u.saler));
+    }
+    console.log(`Loaded ${data.length} users from file`);
+  } catch (e) {
+    console.error('Failed to load users:', e.message);
+  }
+}
+
+// Загружаем при старте
+loadUsers();
 module.exports = {
   getUser,
   setUser,
   getAllUsers,
+  getDailyReportSent,
+  setDailyReportSent,
   getUsersBySaler,
   isMuted,
   mute,

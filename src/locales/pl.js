@@ -163,8 +163,7 @@ module.exports = {
 
   // 9. Anomalie wody/ciśnienia z API
   alertWaterLevel: (deviceId, location, level, lastConnect) => {
-    const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
-    const levelPL = STATUS_MAP[level] || level;
+    const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny', '空': 'Pusty' };    const levelPL = STATUS_MAP[level] || level;
     return `🚱 *PROBLEM Z POZIOMEM WODY*\n` +
       `📍 ${location}\n` +
       `🔧 ID: \`${deviceId}\`\n` +
@@ -174,8 +173,7 @@ module.exports = {
   },
 
   alertWaterPressure: (deviceId, location, pressure, lastConnect) => {
-    const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny' };
-    const pressurePL = STATUS_MAP[pressure] || pressure;
+    const STATUS_MAP = { '异常': 'Nieprawidłowy', '正常': 'Normalny', '空': 'Pusty' };    const pressurePL = STATUS_MAP[pressure] || pressure;
     return `💨 *PROBLEM Z CIŚNIENIEM WODY*\n` +
       `📍 ${location}\n` +
       `🔧 ID: \`${deviceId}\`\n` +
