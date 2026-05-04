@@ -30,8 +30,8 @@ function getWarsawNow() {
 }
 function fromApiTime(apiTimeStr) {
   if (!apiTimeStr) return null;
-  // API возвращает время в UTC+8, конвертируем в Europe/Warsaw
-  return dayjs.utc(apiTimeStr).subtract(8, 'hour').tz('Europe/Warsaw').format('DD.MM.YYYY HH:mm:ss');
+  // API возвращает время в китайском часовом поясе (UTC+8), конвертируем в Europe/Warsaw
+  return dayjs.tz(apiTimeStr, 'Asia/Shanghai').tz('Europe/Warsaw').format('DD.MM.YYYY HH:mm:ss');
 }
 
 /**
@@ -44,7 +44,8 @@ function toApiTime(date) {
 // ================================================================
 // ОСНОВНАЯ ФУНКЦИЯ — вызывается каждые 10 минут для каждого пользователя
 // ================================================================
-async function runMonitorCycle(userState) {
+async function runMonitorCycle(userState, options = {}) {
+  const { skipDailyReport = false } = options;
   const { appid, saler } = userState;
   const now = Date.now();
 
@@ -79,7 +80,9 @@ async function runMonitorCycle(userState) {
     }
 
     // 6. Ежедневный отчёт
-    await checkDailyReport(userState);
+    if (!skipDailyReport) {
+      await checkDailyReport(userState);
+    }
 
   } catch (err) {
     logger.error(`Monitor cycle error for ${saler}: ${err.message}`);
@@ -418,4 +421,26 @@ async function checkDailyReport(userState) {
   logger.info(`[${saler}] Daily report prepared for ${yesterday}`);
 }
 
-module.exports = { runMonitorCycle };
+// ================================================================
+// Ежедневные отчёты для всех saler (вызывается один раз в cron)
+// ================================================================
+async function runDailyReportsForAllSalers() {
+  const users = state.getAllUsers();
+  const processedSalers = new Set();
+
+  for (const userState of users) {
+    const { saler } = userState;
+
+    // Пропускаем, если уже обработали этот saler
+    if (processedSalers.has(saler)) continue;
+    processedSalers.add(saler);
+
+    try {
+      await checkDailyReport(userState);
+    } catch (err) {
+      logger.error(`🔥 Daily report error for saler=${saler}: ${err.message}`);
+    }
+  }
+}
+
+module.exports = { runMonitorCycle, runDailyReportsForAllSalers };

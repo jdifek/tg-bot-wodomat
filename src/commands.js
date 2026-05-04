@@ -133,9 +133,10 @@ async function handleDevices(ctx) {
       const loc = d?.location || id;
       const isOff = userState.activeAlerts.has(`offline_${id}`);
       const lastConn = d?.lastConnect
-      ? `(${dayjs(d.lastConnect).format('DD.MM HH:mm')})`
-      : '';
-    lines.push(`${id} — ${loc} — ${isOff ? '🔴 offline' : '🟢 online'} ${lastConn}`);    }
+        ? `(${dayjs(d.lastConnect).format('DD.MM HH:mm')})`
+        : '';
+      lines.push(`${id} — ${loc} — ${isOff ? '🔴 offline' : '🟢 online'} ${lastConn}`);
+    }
   }
 
   const text = lines.join('\n');
@@ -156,15 +157,32 @@ async function handleAlerts(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
 
-  if (userState.activeAlerts.size === 0) {
-    return ctx.reply('Brak aktywnych problemów', { parse_mode: 'Markdown' });
+  await ctx.reply('⏳ Проверка текущего состояния...');
+
+  // Запускаем проверку текущего состояния
+  const monitor = require('./services/monitor');
+  try {
+    await monitor.runMonitorCycle(userState, {
+      checkDeviceDetail: true,
+      checkExceptions: true,
+      checkQrPayments: false,
+      skipDailyReport: true,
+    });
+  } catch (err) {
+    logger.error(`Error in alerts command: ${err.message}`);
+    return ctx.reply('❌ Ошибка при проверке состояния', { parse_mode: 'Markdown' });
   }
 
-  const lines = [`⚠️ *Aktywne problemy (${userState.activeAlerts.size}):*\n`];
+  // Показываем актуальные алерты
+  if (userState.activeAlerts.size === 0) {
+    return ctx.reply('✅ ОШИБОК НЕТ', { parse_mode: 'Markdown' });
+  }
+
+  const lines = [`⚠️ *Актуальные проблемы (${userState.activeAlerts.size}):*\n`];
 
   for (const [key, alert] of userState.activeAlerts) {
     const since = dayjs(alert.since).format('DD.MM HH:mm');
-    lines.push(`${alert.msg}\n⏱ _od ${since}_`);
+    lines.push(`${alert.msg}\n⏱ _от ${since}_`);
     lines.push('──────────────');
   }
 
