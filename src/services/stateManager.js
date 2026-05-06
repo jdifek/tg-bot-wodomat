@@ -1,5 +1,4 @@
-// src/services/stateManager.js
-// Хранит состояние всех пользователей и аппаратов в памяти
+// src/services/stateManager.js — przechowywanie stanu wszystkich użytkowników i urządzeń
 'use strict';
 
 const dayjs = require('dayjs');
@@ -18,24 +17,24 @@ function createUserState(chatId, appid, saler) {
     registeredAt: Date.now(),
     muteUntil: null,
 
-    // Кэш устройств
+    // Cache urządzeń
     devices: new Map(),
 
-    // Активные проблемы
+    // Aktywne problemy
     activeAlerts: new Map(),
 
-    // Накопленные алерты для отправки
+    // Zgromadzone alerty do wysłania
     pendingAlerts: [],
 
-    // Уже отправленные QR платежи
+    // Wysłane płatności QR
     sentQrPayments: new Set(),
 
-    // Батчинг устройств
+    // Batchowanie urządzeń
     batchOffset: 0,
     allDeviceIds: [],
     deviceIdsLastUpdate: 0,
 
-    // Ежедневный отчёт
+    // Raport dzienny
     lastDailyReportDate: null,
   };
 }
@@ -49,7 +48,7 @@ function setUser(chatId, appid, saler) {
 
   const state = createUserState(chatId, appid, saler);
   users.set(chatId, state);
-  saveUsers(); // сохраняем при добавлении
+  saveUsers(); // zapisujemy przy dodawaniu
   return state;
 }
 function getAllUsers() {
@@ -146,7 +145,6 @@ function loadUsers() {
   }
 }
 
-// Загружаем при старте
 loadUsers();
 module.exports = {
   getUser,
