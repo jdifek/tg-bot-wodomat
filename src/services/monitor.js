@@ -363,6 +363,7 @@ async function checkSimCards(userState) {
 // ================================================================
 // 6. Ежедневный отчёт
 // ================================================================
+
 async function checkDailyReport(userState) {
   const { appid, saler } = userState;
   const now = getWarsawNow();
@@ -372,9 +373,15 @@ async function checkDailyReport(userState) {
   if (hour !== cfg.dailyReportHour) return;
   if (state.getDailyReportSent(saler) === date) return;
   state.setDailyReportSent(saler, date);
-  const yesterday = now.subtract(1, 'day').format('YYYY-MM-DD');
-  const beginTime = `${yesterday} 00:00:00`;
-  const endTime = `${yesterday} 23:59:59`;
+
+  const yesterday = now.subtract(1, 'day');
+  const yesterdayStr = yesterday.format('YYYY-MM-DD');
+
+  // Конвертируем границы дня по Warsaw → UTC+8 для API
+  const beginTime = toApiTime(yesterday.startOf('day'));
+  const endTime   = toApiTime(yesterday.endOf('day'));
+
+  logger.info(`[${saler}] Daily report: Warsaw ${yesterdayStr} 00:00–23:59 → API ${beginTime} → ${endTime}`);
 
   const allRecords = [];
   let page = 1;
@@ -398,7 +405,7 @@ async function checkDailyReport(userState) {
   }
 
   let totalLiters = 0, totalAmount = 0;
-  let lines = [t.dailyReportHeader(yesterday)];
+  let lines = [t.dailyReportHeader(yesterdayStr)];
 
   const entries = Object.values(byDevice);
   if (entries.length === 0) {
@@ -418,9 +425,8 @@ async function checkDailyReport(userState) {
     msg: lines.join('\n'),
   });
 
-  logger.info(`[${saler}] Daily report prepared for ${yesterday}`);
+  logger.info(`[${saler}] Daily report prepared for ${yesterdayStr}: ${allRecords.length} records`);
 }
-
 // ================================================================
 // Ежедневные отчёты для всех saler (вызывается один раз в cron)
 // ================================================================

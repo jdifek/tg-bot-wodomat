@@ -4,7 +4,6 @@ require('dotenv').config();
 
 const { Telegraf } = require('telegraf');
 const cron = require('node-cron');
-const dayjs = require('dayjs');
 
 const cfg = require('./config');
 const logger = require('./logger');
@@ -14,9 +13,6 @@ const sender = require('./services/sender');
 const cmds = require('./commands');
 const { acquireLock, releaseLock } = require('./lockfile');
 
-// ================================================================
-// Инициализация бота
-// ================================================================
 const bot = new Telegraf(cfg.botToken);
 bot.catch((err, ctx) => {
   logger.error('🔥 TELEGRAM ERROR');
@@ -81,12 +77,16 @@ cron.schedule('*/10 * * * *', async () => {
         checkDeviceDetail: true,
         checkExceptions: true,
         checkQrPayments: shouldRunQrPayments,
+        skipDailyReport: true, // Пропускаем ежедневный отчёт в цикле пользователей
       });
     } catch (err) {
       logger.error(`🔥 MONITOR ERROR user=${u.id}`);
       logger.error(err.stack || err);
     }
   }
+
+  // Ежедневный отчёт генерируем ОДИН раз на saler, а не на пользователя
+  await monitor.runDailyReportsForAllSalers();
 
   cycleCounter++;
 
