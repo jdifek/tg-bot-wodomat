@@ -19,30 +19,30 @@ const api = require('./apiClient');
 const state = require('./stateManager');
 const t = require('../locales/' + cfg.locale);
 
-// Значения "нормально" из API
+// Wartości "normalne" z API
 const NORMAL_VALUES = ['正常', 'normal', 'Normal', ''];
 
 // ================================================================
-// Вспомогательные функции времени
+// Funkcje pomocnicze czasu
 // ================================================================
 function getWarsawNow() {
   return dayjs().tz('Europe/Warsaw');
 }
 function fromApiTime(apiTimeStr) {
   if (!apiTimeStr) return null;
-  // API возвращает время в китайском часовом поясе (UTC+8), конвертируем в Europe/Warsaw
+  // API zwraca czas w strefie czasowej Chin (UTC+8), konwertujemy do Europe/Warsaw
   return dayjs.tz(apiTimeStr, 'Asia/Shanghai').tz('Europe/Warsaw').format('DD.MM.YYYY HH:mm:ss');
 }
 
 /**
- * Конвертирует время Варшавы в формат, который ожидает API (UTC+8)
+ * Konwertuje czas Warszawy na format oczekiwany przez API (UTC+8)
  */
 function toApiTime(date) {
   return date.utc().add(8, 'hour').format('YYYY-MM-DD HH:mm:ss');
 }
 
 // ================================================================
-// ОСНОВНАЯ ФУНКЦИЯ — вызывается каждые 10 минут для каждого пользователя
+// GŁÓWNA FUNKCJA — wywoływana co 10 minut dla każdego użytkownika
 // ================================================================
 async function runMonitorCycle(userState, options = {}) {
   const { skipDailyReport = false, forceRefresh = false } = options;
@@ -50,36 +50,36 @@ async function runMonitorCycle(userState, options = {}) {
   const now = Date.now();
 
   try {
-    // 1. Обновление списка устройств — раз в 10 минут или принудительно
+    // 1. Aktualizacja listy urządzeń — co 10 minut lub wymuszenie
     if (forceRefresh || now - userState.deviceIdsLastUpdate > 10 * 60 * 1000) {
       await refreshDeviceList(userState);
     }
 
-    // 2. Проверка исключений (оффлайн, вода, давление и т.д.) — принудительно или раз в 10 минут
+    // 2. Sprawdzanie wyjątków (offline, woda, ciśnienie itd.) — wymuszenie lub co 10 minut
     if (forceRefresh || !userState._lastExceptionCheck || now - userState._lastExceptionCheck > 10 * 60 * 1000) {
       await checkExceptions(userState);
       userState._lastExceptionCheck = now;
     }
 
-    // 3. Детали устройств (температура) батчами
+    // 3. Szczegóły urządzeń (temperatura) w batchach
     if (!userState._lastDetailCheck || now - userState._lastDetailCheck > 10 * 60 * 1000) {
       await checkDeviceBatch(userState);
       userState._lastDetailCheck = now;
     }
 
-    // 4. QR платежи и продажи без розлива — каждые 30 минут
+    // 4. Płatności QR i sprzedaż bez rozlewu — co 30 minut
     if (!userState._lastQrCheck || now - userState._lastQrCheck > 30 * 60 * 1000) {
       await checkQrPayments(userState);
       userState._lastQrCheck = now;
     }
 
-    // 5. SIM карты — раз в час
+    // 5. Karty SIM — co godzinę
     if (!userState._lastSimCheck || now - userState._lastSimCheck > 60 * 60 * 1000) {
       await checkSimCards(userState);
       userState._lastSimCheck = now;
     }
 
-    // 6. Ежедневный отчёт
+    // 6. Raport dzienny
     if (!skipDailyReport) {
       await checkDailyReport(userState);
     }
@@ -90,7 +90,7 @@ async function runMonitorCycle(userState, options = {}) {
 }
 
 // ================================================================
-// 1. Обновление списка устройств
+// 1. Aktualizacja listy urządzeń
 // ================================================================
 async function refreshDeviceList(userState) {
   const { appid, saler } = userState;
@@ -115,7 +115,7 @@ async function refreshDeviceList(userState) {
 }
 
 // ================================================================
-// 2. Проверка исключений (exception-status-query)
+// 2. Sprawdzanie wyjątków (exception-status-query)
 // ================================================================
 async function checkExceptions(userState) {
   const { appid, saler } = userState;
@@ -137,7 +137,7 @@ async function checkExceptions(userState) {
           lastConnect: item.lastConnect,
         });
       }
-      // ── Оффлайн ──
+      // ── Status offline ──
       const alertKeyOffline = `offline_${deviceId}`;
       const isOfflineByStatus = item.statusMsg === '离线';
 
@@ -159,7 +159,7 @@ async function checkExceptions(userState) {
         state.resolveAlertForAll(saler, alertKeyOffline, t.alertStatusOnline(deviceId, location));
       }
 
-      // ── Уровень воды ──
+      // ── Poziom wody ──
       const alertKeyWater = `water_level_${deviceId}`;
       if (item.waterLevel && !NORMAL_VALUES.includes(item.waterLevel)) {
         state.addAlertToAll(saler, alertKeyWater, {
@@ -170,7 +170,7 @@ async function checkExceptions(userState) {
         state.resolveAlertForAll(saler, alertKeyWater, t.alertResolved(deviceId, location, 'water_level'));
       }
 
-      // ── Давление воды ──
+      // ── Ciśnienie wody ──
       const alertKeyPressure = `water_pressure_${deviceId}`;
       if (type !== 'shop_water' && item.waterPressure && !NORMAL_VALUES.includes(item.waterPressure)) {
         state.addAlertToAll(saler, alertKeyPressure, {
@@ -182,7 +182,7 @@ async function checkExceptions(userState) {
         state.resolveAlertForAll(saler, alertKeyPressure, t.alertResolved(deviceId, location, 'water_pressure'));
       }
 
-      // ── Температура из exception ──
+      // ── Niska temperatura ──
       if (item.temp !== undefined && item.temp !== null && item.temp !== '') {
         checkTemp(userState, deviceId, location, parseFloat(item.temp));
       }
@@ -193,44 +193,7 @@ async function checkExceptions(userState) {
 }
 
 // ================================================================
-// 3. Батчевый опрос деталей устройств (температура)
-// ================================================================
-async function checkDeviceBatch(userState) {
-  const { appid, saler } = userState;
-  const ids = userState.allDeviceIds;
-  if (ids.length === 0) return;
-
-  const offset = userState.batchOffset;
-  const batch = ids.slice(offset, offset + cfg.batchSize);
-
-  userState.batchOffset = (offset + cfg.batchSize) >= ids.length ? 0 : offset + cfg.batchSize;
-
-  for (const deviceId of batch) {
-    const resp = await api.getDeviceDetail(appid, saler, deviceId);
-    if (!resp || resp.code !== 0 || !resp.data) {
-      await api.sleep(cfg.requestDelayMs);
-      continue;
-    }
-
-    const d = resp.data;
-    const location = d.location || userState.devices.get(deviceId)?.location || deviceId;
-
-    userState.devices.set(deviceId, {
-      ...(userState.devices.get(deviceId) || {}),
-      location,
-      lastDetail: d,
-    });
-
-    if (d.temp !== undefined && d.temp !== null && d.temp !== '') {
-      checkTemp(userState, deviceId, location, parseFloat(d.temp));
-    }
-
-    await api.sleep(cfg.requestDelayMs);
-  }
-}
-
-// ================================================================
-// Проверка температуры (low / high)
+// 3. Sprawdzanie temperatury (low / high)
 // ================================================================
 function checkTemp(userState, deviceId, location, temp) {
   if (isNaN(temp)) return;
@@ -259,7 +222,7 @@ function checkTemp(userState, deviceId, location, temp) {
 }
 
 // ================================================================
-// 4. QR платежи и продажи без розлива
+// 4. Płatności QR i sprzedaż bez rozlewu
 // ================================================================
 async function checkQrPayments(userState) {
   const { appid, saler } = userState;
@@ -315,7 +278,7 @@ async function checkQrPayments(userState) {
   }
 
 
-  // Очистка старых записей
+  // Czyszczenie starych zapisów
   if (userState.sentQrPayments.size > 500) {
     const first = userState.sentQrPayments.values().next().value;
     userState.sentQrPayments.delete(first);
@@ -323,7 +286,7 @@ async function checkQrPayments(userState) {
 }
 
 // ================================================================
-// 5. SIM карты
+// 5. Sprawdzanie kart SIM
 // ================================================================
 async function checkSimCards(userState) {
   const { appid, saler } = userState;
@@ -361,7 +324,7 @@ async function checkSimCards(userState) {
 }
 
 // ================================================================
-// 6. Ежедневный отчёт
+// 6. Raport dzienny
 // ================================================================
 
 async function checkDailyReport(userState) {
@@ -377,7 +340,7 @@ async function checkDailyReport(userState) {
   const yesterday = now.subtract(1, 'day');
   const yesterdayStr = yesterday.format('YYYY-MM-DD');
 
-  // Конвертируем границы дня по Warsaw → UTC+8 для API
+  // Konwertujemy granice dnia po Warsaw → UTC+8 dla API
   const beginTime = toApiTime(yesterday.startOf('day'));
   const endTime = toApiTime(yesterday.endOf('day'));
 
@@ -428,7 +391,7 @@ async function checkDailyReport(userState) {
   logger.info(`[${saler}] Daily report prepared for ${yesterdayStr}: ${allRecords.length} records`);
 }
 // ================================================================
-// Ежедневные отчёты для всех saler (вызывается один раз в cron)
+// Raporty dzienne dla wszystkich saler (wywoływane raz w cron)
 // ================================================================
 async function runDailyReportsForAllSalers() {
   const users = state.getAllUsers();
@@ -437,7 +400,7 @@ async function runDailyReportsForAllSalers() {
   for (const userState of users) {
     const { saler } = userState;
 
-    // Пропускаем, если уже обработали этот saler
+    // Pomijamy, jeśli już przetworzono ten saler
     if (processedSalers.has(saler)) continue;
     processedSalers.add(saler);
 

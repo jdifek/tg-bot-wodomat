@@ -157,9 +157,9 @@ async function handleAlerts(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
 
-  await ctx.reply('⏳ Проверка текущего состояния...');
+  await ctx.reply('⏳ Sprawdzanie aktualnego stanu...');
 
-  // Запускаем проверку текущего состояния
+  // Uruchamiamy sprawdzenie aktualnego stanu
   const monitor = require('./services/monitor');
   try {
     await monitor.runMonitorCycle(userState, {
@@ -167,23 +167,23 @@ async function handleAlerts(ctx) {
       checkExceptions: true,
       checkQrPayments: false,
       skipDailyReport: true,
-      forceRefresh: true, // Принудительно обновляем состояние
+      forceRefresh: true, // Wymuszamy odświeżenie stanu
     });
   } catch (err) {
     logger.error(`Error in alerts command: ${err.message}`);
-    return ctx.reply('❌ Ошибка при проверке состояния', { parse_mode: 'Markdown' });
+    return ctx.reply('❌ Błąd podczas sprawdzania stanu', { parse_mode: 'Markdown' });
   }
 
-  // Показываем актуальные алерты
+  // Pokazujemy aktualne alerty
   if (userState.activeAlerts.size === 0) {
-    return ctx.reply('✅ ОШИБОК НЕТ', { parse_mode: 'Markdown' });
+    return ctx.reply('✅ BRAK BŁĘDÓW', { parse_mode: 'Markdown' });
   }
 
-  const lines = [`⚠️ *Актуальные проблемы (${userState.activeAlerts.size}):*\n`];
+  const lines = [`⚠️ *Aktualne problemy (${userState.activeAlerts.size}):*\n`];
 
   for (const [key, alert] of userState.activeAlerts) {
     const since = dayjs(alert.since).format('DD.MM HH:mm');
-    lines.push(`${alert.msg}\n⏱ _от ${since}_`);
+    lines.push(`${alert.msg}\n⏱ _od ${since}_`);
     lines.push('──────────────');
   }
 

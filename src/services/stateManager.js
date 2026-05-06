@@ -56,7 +56,7 @@ function getAllUsers() {
   return Array.from(users.values());
 }
 
-/** Возвращает всех пользователей с данным saler (главное исправление) */
+/** Zwraca wszystkich użytkowników z danym saler (główna poprawka) */
 function getUsersBySaler(saler) {
   return getAllUsers().filter(u => u.saler === saler);
 }
@@ -75,10 +75,10 @@ function unmute(userState) {
 }
 
 // ================================================================
-// Работа с алертами для всех пользователей одного saler
+// Praca z alertami dla wszystkich użytkowników jednego saler
 // ================================================================
 
-/** Добавить алерт ВСЕМ пользователям с этим saler */
+/** Dodaj alert WSZYSTKIM użytkownikom z tym saler */
 function addAlertToAll(saler, key, alertObj) {
   const usersWithSaler = getUsersBySaler(saler);
   for (const userState of usersWithSaler) {
@@ -89,7 +89,7 @@ function addAlertToAll(saler, key, alertObj) {
   }
 }
 
-/** Снять алерт у всех пользователей с этим saler */
+/** Usuń alert u wszystkich użytkowników z tym saler */
 function resolveAlertForAll(saler, key, resolvedMsg) {
   const usersWithSaler = getUsersBySaler(saler);
   for (const userState of usersWithSaler) {
@@ -102,7 +102,7 @@ function resolveAlertForAll(saler, key, resolvedMsg) {
   }
 }
 
-/** Добавить обычный pending alert всем пользователям с этим saler */
+/** Dodaj pending alert wszystkim użytkownikom z tym saler */
 function addPendingAlertToAll(saler, alertObj) {
   const usersWithSaler = getUsersBySaler(saler);
   for (const userState of usersWithSaler) {
@@ -110,7 +110,7 @@ function addPendingAlertToAll(saler, alertObj) {
   }
 }
 
-/** Забрать и очистить накопленные алерты для конкретного пользователя */
+/** Pobierz i wyczyść zgromadzone alerty dla konkretnego użytkownika */
 function flushPendingAlerts(userState) {
   if (!userState) return [];
   const alerts = [...userState.pendingAlerts];

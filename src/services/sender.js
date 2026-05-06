@@ -10,7 +10,7 @@ const t = require('../locales/' + require('../config').locale);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ================================================================
-// Отправка накопленных алертов всем пользователям
+// Wysyłanie zgromadzonych alertów do wszystkich użytkowników
 // ================================================================
 async function flushAllAlerts(bot) {
   const users = state.getAllUsers();
@@ -21,25 +21,25 @@ async function flushAllAlerts(bot) {
     const alerts = state.flushPendingAlerts(userState);
     if (alerts.length === 0) continue;
 
-    // Разделяем отчёты и обычные алерты
+    // Rozdzielamy raporty i zwykłe alerty
     const reports = alerts.filter(a => a.isReport);
     const realAlerts = alerts.filter(a => !a.isReport);
 
-    // Обычные алерты группируем и отправляем батчами
+    // Zwykłe alerty grupujemy i wysyłamy w batchach
     if (realAlerts.length > 0) {
       await sendAlertsBatch(bot, userState.chatId, realAlerts);
     }
 
-    // Отчёты отправляем по одному (обычно они важные и объёмные)
+    // Raporty wysyłamy pojedynczo (zwykle są ważne i obszerne)
     for (const rep of reports) {
       await safeSend(bot, userState.chatId, rep.msg);
-      await sleep(300); // небольшая задержка между отчётами
+      await sleep(300); // niewielkie opóźnienie między raportami
     }
   }
 }
 
 // ================================================================
-// Группировка алертов и отправка батчами (по 10 штук)
+// Grupowanie alertów i wysyłanie w batchach (po 10 sztuk)
 // ================================================================
 async function sendAlertsBatch(bot, chatId, alerts) {
   const CHUNK_SIZE = 10;
@@ -50,7 +50,7 @@ async function sendAlertsBatch(bot, chatId, alerts) {
     const time = dayjs().format('DD.MM.YYYY HH:mm');
 
     const lines = [
-      t.alertHeader(alerts.length),           // общее количество всех алертов, а не только в чанке
+      t.alertHeader(alerts.length),           // całkowita liczba wszystkich alertów, nie tylko w batchu
       ...chunk.map(a => a.msg),
       t.alertFooter(time)
     ];
@@ -61,12 +61,12 @@ async function sendAlertsBatch(bot, chatId, alerts) {
 }
 
 // ================================================================
-// Безопасная отправка с обработкой лимитов Telegram
+// Bezpieczne wysyłanie z obsługą limitów Telegram
 // ================================================================
 async function safeSend(bot, chatId, text) {
-  // Поддерживаем оба варианта: bot (Telegraf) и { telegram } и ctx.telegram напрямую
+  // Obsługujemy oba warianty: bot (Telegraf) i { telegram } oraz ctx.telegram bezpośrednio
   const telegram = bot?.telegram ?? bot;
-  
+
   if (!telegram?.sendMessage) {
     logger.error(`safeSend: invalid bot object for chatId=${chatId}`);
     return;
@@ -88,7 +88,7 @@ async function safeSend(bot, chatId, text) {
 }
 
 // ================================================================
-// Разбиение длинного текста на части
+// Dzielenie długiego tekstu na części
 // ================================================================
 function splitText(text, maxLen) {
   const parts = [];
@@ -97,7 +97,7 @@ function splitText(text, maxLen) {
   while (remaining.length > maxLen) {
     let cutIndex = remaining.lastIndexOf('\n', maxLen);
 
-    // Если не нашли перенос — режем посимвольно
+    // Jeśli nie znaleziono przeniesienia — ciniemy po znakach
     if (cutIndex === -1) cutIndex = maxLen;
 
     parts.push(remaining.slice(0, cutIndex));
