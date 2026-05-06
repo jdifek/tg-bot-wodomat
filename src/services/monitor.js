@@ -45,18 +45,18 @@ function toApiTime(date) {
 // ОСНОВНАЯ ФУНКЦИЯ — вызывается каждые 10 минут для каждого пользователя
 // ================================================================
 async function runMonitorCycle(userState, options = {}) {
-  const { skipDailyReport = false } = options;
+  const { skipDailyReport = false, forceRefresh = false } = options;
   const { appid, saler } = userState;
   const now = Date.now();
 
   try {
-    // 1. Обновление списка устройств — раз в 10 минут
-    if (now - userState.deviceIdsLastUpdate > 10 * 60 * 1000) {
+    // 1. Обновление списка устройств — раз в 10 минут или принудительно
+    if (forceRefresh || now - userState.deviceIdsLastUpdate > 10 * 60 * 1000) {
       await refreshDeviceList(userState);
     }
 
-    // 2. Проверка исключений (оффлайн, вода, давление и т.д.)
-    if (!userState._lastExceptionCheck || now - userState._lastExceptionCheck > 10 * 60 * 1000) {
+    // 2. Проверка исключений (оффлайн, вода, давление и т.д.) — принудительно или раз в 10 минут
+    if (forceRefresh || !userState._lastExceptionCheck || now - userState._lastExceptionCheck > 10 * 60 * 1000) {
       await checkExceptions(userState);
       userState._lastExceptionCheck = now;
     }
@@ -379,7 +379,7 @@ async function checkDailyReport(userState) {
 
   // Конвертируем границы дня по Warsaw → UTC+8 для API
   const beginTime = toApiTime(yesterday.startOf('day'));
-  const endTime   = toApiTime(yesterday.endOf('day'));
+  const endTime = toApiTime(yesterday.endOf('day'));
 
   logger.info(`[${saler}] Daily report: Warsaw ${yesterdayStr} 00:00–23:59 → API ${beginTime} → ${endTime}`);
 

@@ -167,6 +167,7 @@ async function handleAlerts(ctx) {
       checkExceptions: true,
       checkQrPayments: false,
       skipDailyReport: true,
+      forceRefresh: true, // Принудительно обновляем состояние
     });
   } catch (err) {
     logger.error(`Error in alerts command: ${err.message}`);
