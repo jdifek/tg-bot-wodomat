@@ -11,13 +11,16 @@ const state = require('./services/stateManager');
 const monitor = require('./services/monitor');
 const sender = require('./services/sender');
 const cmds = require('./commands');
+const { checkSubscription } = require('./services/subscriptionChecker');
 const { acquireLock, releaseLock } = require('./lockfile');
 
 const bot = new Telegraf(cfg.botToken);
+
 bot.catch((err, ctx) => {
   logger.error('🔥 TELEGRAM ERROR');
   logger.error(err.stack || err);
 });
+
 bot.use(async (ctx, next) => {
   try {
     return await next();
@@ -26,6 +29,7 @@ bot.use(async (ctx, next) => {
     logger.error(err.stack || err);
   }
 });
+
 // ---- Команды ----
 bot.start(cmds.handleStart);
 bot.command('status', cmds.handleStatus);
@@ -36,7 +40,7 @@ bot.command('mute', cmds.handleMute);
 bot.command('unmute', cmds.handleUnmute);
 bot.command('help', cmds.handleHelp);
 
-// Кнопки клавиатуры (текстовые команды)
+// Кнопки клавиатуры
 bot.hears('/status', cmds.handleStatus);
 bot.hears('/devices', cmds.handleDevices);
 bot.hears('/alerts', cmds.handleAlerts);
@@ -45,39 +49,39 @@ bot.hears('/mute', cmds.handleMute);
 bot.hears('/unmute', cmds.handleUnmute);
 bot.hears('/help', cmds.handleHelp);
 
-
 bot.on('message', (ctx) => {
   const text = ctx.message?.text || '';
   if (!text.startsWith('/')) return;
   ctx.reply(require('./locales/' + cfg.locale).cmdUnknown, { parse_mode: 'Markdown' });
 });
 
-
 // ================================================================
 // Планировщик мониторинга
 // ================================================================
 
-// Счётчик для определения 30-минутных интервалов (каждый 3-й запуск = 30 минут)
 let cycleCounter = 0;
 
-// Каждые 10 минут
-cron.schedule('*/10 * * * *', async () => {
+cron.schedule('*/5 * * * *', async () => {
   const users = state.getAllUsers();
   if (users.length === 0) return;
 
   logger.info(`[CRON] Poll cycle #${cycleCounter} — users: ${users.length}`);
 
-  // QR/продажи проверяем каждые 30 минут (каждый 3-й цикл)
-  const shouldRunQrPayments = (cycleCounter % 3 === 0);
+  const shouldRunQrPayments = (cycleCounter % 6 === 0); // каждые 30 мин = 6 циклов по 5 мин
 
-  // Запускаем мониторинг для всех пользователей
   for (const u of users) {
     try {
+      const active = await checkSubscription(u.appid, u.saler);
+      if (!active) {
+        logger.warn(`[CRON] Subscription inactive — saler=${u.saler}, skipping monitoring`);
+        continue;
+      }
+
       await monitor.runMonitorCycle(u, {
         checkDeviceDetail: true,
         checkExceptions: true,
         checkQrPayments: shouldRunQrPayments,
-        skipDailyReport: true, // Пропускаем ежедневный отчёт в цикле пользователей
+        skipDailyReport: true,
       });
     } catch (err) {
       logger.error(`🔥 MONITOR ERROR user=${u.id}`);
@@ -85,12 +89,10 @@ cron.schedule('*/10 * * * *', async () => {
     }
   }
 
-  // Ежедневный отчёт генерируем ОДИН раз на saler, а не на пользователя
   await monitor.runDailyReportsForAllSalers();
 
   cycleCounter++;
 
-  // Отправляем накопленные алерты
   logger.info(`[CRON] Flushing alerts to Telegram`);
   await sender.flushAllAlerts(bot);
 });
@@ -99,7 +101,6 @@ cron.schedule('*/10 * * * *', async () => {
 // Запуск
 // ================================================================
 async function main() {
-  // Проверяем lock file
   if (!acquireLock()) {
     logger.error('❌ Another bot instance is already running. Exiting.');
     process.exit(0);
@@ -108,38 +109,29 @@ async function main() {
   try {
     if (process.env.RAILWAY_ENVIRONMENT) {
       logger.info('Railway detected - single instance mode');
-      // Даём время предыдущему инстансу завершиться
       logger.info('Waiting 10 seconds for previous instance to terminate...');
       await new Promise(resolve => setTimeout(resolve, 10000));
     }
 
     logger.info('Starting bot...');
 
-    // Принудительно удаляем webhook и pending updates
     try {
-      await bot.telegram.deleteWebhook({
-        drop_pending_updates: true
-      });
+      await bot.telegram.deleteWebhook({ drop_pending_updates: true });
       logger.info('Webhook deleted successfully');
     } catch (err) {
       logger.warn('Failed to delete webhook: ' + err.message);
     }
 
-    // Небольшая пауза после удаления webhook
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     logger.info('Launching bot with polling...');
-    
-    await bot.launch({
-      dropPendingUpdates: true
-    });
+    await bot.launch({ dropPendingUpdates: true });
 
     logger.info('✅ Bot launched successfully');
 
   } catch (err) {
     logger.error('🔥 BOT START CRASH');
     logger.error(err.stack || err);
-    
     releaseLock();
     process.exit(1);
   }
@@ -157,17 +149,16 @@ process.on('unhandledRejection', (err) => {
   releaseLock();
 });
 
-// Graceful shutdown
-process.once('SIGINT', () => { 
-  logger.info('SIGINT received'); 
+process.once('SIGINT', () => {
+  logger.info('SIGINT received');
   releaseLock();
-  bot.stop('SIGINT'); 
+  bot.stop('SIGINT');
 });
 
-process.once('SIGTERM', () => { 
-  logger.info('SIGTERM received'); 
+process.once('SIGTERM', () => {
+  logger.info('SIGTERM received');
   releaseLock();
-  bot.stop('SIGTERM'); 
+  bot.stop('SIGTERM');
 });
 
 main().catch(err => {

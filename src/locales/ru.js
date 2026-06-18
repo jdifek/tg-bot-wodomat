@@ -1,4 +1,4 @@
-// src/locales/ru.js — Русский язык
+'use strict';
 
 module.exports = {
   // ---- Приветствие ----
@@ -14,10 +14,31 @@ module.exports = {
   invalidStart:
     `❌ Неверная ссылка запуска.\n\nПожалуйста, перейдите по ссылке из вашей админ-панели.\n\nПример: \`t.me/БотИмя?start=APPID_xxx_SALER_yyy\``,
 
+  invalidStartParam:
+    `❌ Неверная ссылка запуска.\n\nПожалуйста, перейдите по ссылке из вашей админ-панели.\n\nПример: \`t.me/БотИмя?start=APPID_xxx_SALER_yyy\``,
+
   authFailed:
     `❌ Не удалось подключиться к API.\n\nПроверьте правильность данных в ссылке или обратитесь к администратору.`,
 
+  subscriptionExpired:
+    `❌ *Подписка неактивна.*\n\nДля возобновления обратитесь к администратору.`,
+
   settingsSaved: `✅ Настройки сохранены.`,
+
+  // ---- Системные сообщения ----
+  checkingApi:    `⏳ Проверка подключения к API...`,
+  checkingState:  `⏳ Проверка текущего состояния...`,
+  fetchingData:   `⏳ Загрузка данных...`,
+  errorCheckingState: `❌ Ошибка при проверке состояния`,
+
+  // ---- Лейблы ----
+  accountLabel: `Аккаунт`,
+  updatedLabel: `Обновлено`,
+  sinceLabel:   `с`,
+
+  // ---- Статус устройства ----
+  statusOnline:  `🟢 онлайн`,
+  statusOffline: `🔴 оффлайн`,
 
   // ---- Команды ----
   cmdStatus: `📊 *Статус мониторинга*`,
@@ -42,18 +63,19 @@ module.exports = {
   noAlerts: `✅ Активных проблем нет`,
 
   // ---- Список устройств ----
-  devicesHeader: `📟 *Список аппаратов:*\n`,
-  deviceLine: (id, location, status) =>
-    `${status === 'online' ? '🟢' : '🔴'} \`${id}\` — ${location}`,
-  devicesEmpty: `Аппараты не найдены.`,
+  devicesHeader: `📟 *Список аппаратов:*`,
+  devicesEmpty:  `Аппараты не найдены.`,
+
+  // ---- Алерты ----
+  noProblems:       `✅ ОШИБОК НЕТ`,
+  currentProblems:  (n) => `Текущие проблемы (${n}):`,
 
   // ---- Отчёт продаж ----
-  reportHeader: (date) => `📊 *Отчёт продаж за ${date}*\n`,
+  reportHeader: (date) => `📊 *Отчёт продаж за ${date}*`,
   reportLine: (location, liters, amount) =>
     `📍 ${location}\n   💧 ${liters} л  |  💰 ${amount} zł`,
   reportTotal: (liters, amount) =>
-    `\n━━━━━━━━━━━━━━\n` +
-    `📦 *Итого:* ${liters} л  |  💰 ${amount} zł`,
+    `━━━━━━━━━━━━━━\n📦 *Итого:* ${liters} л  |  💰 ${amount} zł`,
   reportEmpty: `За сегодня продаж не найдено.`,
 
   // ---- Mute ----
@@ -70,14 +92,12 @@ module.exports = {
 
   alertFooter: (time) => `\n🕐 Время проверки: ${time}`,
 
-  // 1. Нет воды / бак наполняется
   alertNoWater: (deviceId, location) =>
     `🚱 *НЕТ ВОДЫ В БАКЕ*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `💡 Проверьте кран подачи воды, работу мембран и насосов`,
 
-  // 2. Продажа без розлива
   alertNoDispense: (deviceId, location, amount) =>
     `💸 *ПРОДАЖА БЕЗ РОЗЛИВА*\n` +
     `📍 ${location}\n` +
@@ -85,7 +105,6 @@ module.exports = {
     `💰 Сумма оплаты: ${amount} zł\n` +
     `💡 Проведена оплата, но вода не выдана — проверьте аппарат`,
 
-  // 3а. Низкая температура
   alertTempLow: (deviceId, location, temp) =>
     `🥶 *НИЗКАЯ ТЕМПЕРАТУРА*\n` +
     `📍 ${location}\n` +
@@ -93,7 +112,6 @@ module.exports = {
     `🌡 Температура: *${temp}°C*\n` +
     `💡 Проверьте электричество и систему обогрева водомата`,
 
-  // 3б. Высокая температура
   alertTempHigh: (deviceId, location, temp) =>
     `🔥 *ВЫСОКАЯ ТЕМПЕРАТУРА*\n` +
     `📍 ${location}\n` +
@@ -101,7 +119,6 @@ module.exports = {
     `🌡 Температура: *${temp}°C*\n` +
     `💡 Проверьте систему охлаждения и вентиляцию`,
 
-  // 4. Оффлайн более 15 минут
   alertOffline: (deviceId, location, minutes) =>
     `📵 *АППАРАТ НЕ НА СВЯЗИ*\n` +
     `📍 ${location}\n` +
@@ -109,7 +126,6 @@ module.exports = {
     `⏱ Не выходил на связь: *${minutes} мин.*\n` +
     `💡 Проверьте подачу электричества или работу SIM-карты`,
 
-  // 5. Ежедневный отчёт продаж
   dailyReportHeader: (date) =>
     `📊 *ОТЧЁТ ПРОДАЖ ЗА ${date}*\n━━━━━━━━━━━━━━━━━━━━`,
 
@@ -122,7 +138,6 @@ module.exports = {
 
   dailyReportEmpty: `📊 *Отчёт за вчера:* продаж не зафиксировано.`,
 
-  // 6. Статус онлайн/оффлайн (периодический)
   alertStatusOnline: (deviceId, location) =>
     `🟢 *АППАРАТ СНОВА ОНЛАЙН*\n` +
     `📍 ${location}\n` +
@@ -134,14 +149,12 @@ module.exports = {
     `🔧 ID: \`${deviceId}\`\n` +
     `💡 Возможно есть проблемы с аппаратом`,
 
-  // 7. QR пополнение
   alertQrPayment: (deviceId, location, amount) =>
     `💳 *УДАЛЁННОЕ ПОПОЛНЕНИЕ QR*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `💰 Сумма: *${amount} zł*`,
 
-  // 8. Истекает оплата мониторинга (SIM)
   alertSimExpiring: (iccid, deviceLocation, daysLeft, expireDate) =>
     `📶 *ИСТЕКАЕТ ОПЛАТА SIM-КАРТЫ*\n` +
     `📍 ${deviceLocation}\n` +
@@ -156,7 +169,6 @@ module.exports = {
     `🔢 ICCID: \`${iccid}\`\n` +
     `💡 Внесите оплату за мониторинг немедленно`,
 
-  // Аномалии воды/давления из API
   alertWaterLevel: (deviceId, location, level) =>
     `🚱 *ПРОБЛЕМА С УРОВНЕМ ВОДЫ*\n` +
     `📍 ${location}\n` +
@@ -171,7 +183,6 @@ module.exports = {
     `📊 Статус давления: ${pressure}\n` +
     `💡 Проверьте подключение водопровода`,
 
-  // Проблема восстановлена
   alertResolved: (deviceId, location, type) =>
     `✅ *ПРОБЛЕМА УСТРАНЕНА*\n` +
     `📍 ${location}\n` +

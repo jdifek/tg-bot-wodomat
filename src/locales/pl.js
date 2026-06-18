@@ -1,4 +1,4 @@
-// src/locales/pl.js — Język polski
+'use strict';
 
 module.exports = {
   // ---- Powitanie ----
@@ -14,10 +14,31 @@ module.exports = {
   invalidStart:
     `❌ Nieprawidłowy link uruchomienia.\n\nProszę przejść przez link z panelu administracyjnego.\n\nPrzykład: \`t.me/NazwaBot?start=APPID_xxx_SALER_yyy\``,
 
+  invalidStartParam:
+    `❌ Nieprawidłowy link startowy.\n\nProszę przejść przez link z panelu administracyjnego.\n\nPrzykład: \`t.me/NazwaBot?start=APPID_xxx_SALER_yyy\``,
+
   authFailed:
     `❌ Nie udało się połączyć z API.\n\nSprawdź poprawność danych w linku lub skontaktuj się z administratorem.`,
 
+  subscriptionExpired:
+    `❌ *Subskrypcja nieaktywna.*\n\nAby wznowić, skontaktuj się z administratorem.`,
+
   settingsSaved: `✅ Ustawienia zapisane.`,
+
+  // ---- Komunikaty systemowe ----
+  checkingApi:    `⏳ Sprawdzanie połączenia z API...`,
+  checkingState:  `⏳ Sprawdzanie aktualnego stanu...`,
+  fetchingData:   `⏳ Pobieranie danych...`,
+  errorCheckingState: `❌ Błąd podczas sprawdzania stanu`,
+
+  // ---- Etykiety ----
+  accountLabel: `Konto`,
+  updatedLabel: `Zaktualizowano`,
+  sinceLabel:   `od`,
+
+  // ---- Status urządzenia ----
+  statusOnline:  `🟢 online`,
+  statusOffline: `🔴 offline`,
 
   // ---- Polecenia ----
   cmdStatus: `📊 *Status monitorowania*`,
@@ -42,22 +63,23 @@ module.exports = {
   noAlerts: `✅ Brak aktywnych problemów`,
 
   // ---- Lista urządzeń ----
-  devicesHeader: `📟 *Lista automatów:*\n`,
-  deviceLine: (id, location, status) =>
-    `${status === 'online' ? '🟢' : '🔴'} \`${id}\` — ${location}`,
-  devicesEmpty: `Nie znaleziono automatów.`,
+  devicesHeader: `📟 *Lista automatów:*`,
+  devicesEmpty:  `Nie znaleziono automatów.`,
+
+  // ---- Alerty ----
+  noProblems:      `✅ BRAK BŁĘDÓW`,
+  currentProblems: (n) => `Aktualne problemy (${n}):`,
 
   // ---- Raport sprzedaży ----
-  reportHeader: (date) => `📊 *Raport sprzedaży za ${date}*\n`,
+  reportHeader: (date) => `📊 *Raport za ${date}*`,
   reportLine: (location, liters, amount) =>
     `📍 ${location}\n   💧 ${liters} l  |  💰 ${amount} zł`,
   reportTotal: (liters, amount) =>
-    `\n━━━━━━━━━━━━━━\n` +
-    `📦 *Łącznie:* ${liters} l  |  💰 ${amount} zł`,
+    `━━━━━━━━━━━━━━\n📦 *Łącznie:* ${liters} l  |  💰 ${amount} zł`,
   reportEmpty: `Brak sprzedaży na dzisiaj.`,
 
   // ---- Mute ----
-  mutedFor: (hours) => `🔕 Powiadomienia wyłączone na ${hours} h.`,
+  mutedFor: (hours) => `🔕 Powiadomienia wyciszone na ${hours} h.`,
   unmuted: `🔔 Powiadomienia włączone.`,
 
   // ============================================================
@@ -70,23 +92,20 @@ module.exports = {
 
   alertFooter: (time) => `\n🕐 Czas sprawdzenia: ${time}`,
 
-  // 1. Brak wody / zbiornik się napełnia
   alertNoWater: (deviceId, location) =>
     `🚱 *BRAK WODY W ZBIORNIKU*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `💡 Sprawdź zawór dopływu wody, działanie membran i pomp`,
 
-  // 2. Sprzedaż bez nalewania
   alertNoDispense: (deviceId, location, amount, time) =>
     `💸 *SPRZEDAŻ BEZ NALEWANIA*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `💰 Kwota płatności: ${amount} zł\n` +
-    `🕐 Czas transakcji: ${time || '—'}\n` +
+    (time ? `🕐 Czas transakcji: ${time}\n` : '') +
     `💡 Płatność zrealizowana, ale woda nie została wydana — sprawdź automat`,
 
-  // 3a. Niska temperatura
   alertTempLow: (deviceId, location, temp, time) =>
     `🥶 *NISKA TEMPERATURA*\n` +
     `📍 ${location}\n` +
@@ -95,7 +114,6 @@ module.exports = {
     (time ? `🕐 Od: ${time}\n` : '') +
     `💡 Sprawdź zasilanie i system ogrzewania automatu`,
 
-  // 3b. Wysoka temperatura
   alertTempHigh: (deviceId, location, temp, time) =>
     `🔥 *WYSOKA TEMPERATURA*\n` +
     `📍 ${location}\n` +
@@ -104,7 +122,6 @@ module.exports = {
     (time ? `🕐 Od: ${time}\n` : '') +
     `💡 Sprawdź system chłodzenia i wentylację`,
 
-  // 4. Offline ponad 15 minut
   alertOffline: (deviceId, location, minutes, lastConnect) =>
     `📵 *AUTOMAT BEZ POŁĄCZENIA*\n` +
     `📍 ${location}\n` +
@@ -113,7 +130,6 @@ module.exports = {
     (lastConnect ? `🕐 Ostatnie połączenie: ${lastConnect}\n` : '') +
     `💡 Sprawdź zasilanie lub działanie karty SIM`,
 
-  // 5. Dzienny raport sprzedaży
   dailyReportHeader: (date) =>
     `📊 *RAPORT SPRZEDAŻY ZA ${date}*\n━━━━━━━━━━━━━━━━━━━━`,
 
@@ -126,7 +142,6 @@ module.exports = {
 
   dailyReportEmpty: `📊 *Raport za wczoraj:* brak zarejestrowanej sprzedaży.`,
 
-  // 6. Status online/offline
   alertStatusOnline: (deviceId, location) =>
     `🟢 *AUTOMAT ZNOWU ONLINE*\n` +
     `📍 ${location}\n` +
@@ -138,7 +153,6 @@ module.exports = {
     `🔧 ID: \`${deviceId}\`\n` +
     `💡 Możliwe problemy z automatem`,
 
-  // 7. Doładowanie QR
   alertQrPayment: (deviceId, location, amount, time) =>
     `💳 *ZDALNE DOŁADOWANIE QR*\n` +
     `📍 ${location}\n` +
@@ -146,7 +160,6 @@ module.exports = {
     `💰 Kwota: *${amount} zł*\n` +
     (time ? `🕐 Czas: ${time}\n` : ''),
 
-  // 8. Wygasa opłata za monitoring (SIM)
   alertSimExpiring: (iccid, deviceLocation, daysLeft, expireDate) =>
     `📶 *WYGASA OPŁATA ZA KARTĘ SIM*\n` +
     `📍 ${deviceLocation}\n` +
@@ -161,17 +174,12 @@ module.exports = {
     `🔢 ICCID: \`${iccid}\`\n` +
     `💡 Dokonaj opłaty za monitoring natychmiast`,
 
-  // 9. Anomalie wody/ciśnienia z API
   alertWaterLevel: (deviceId, location, level, lastConnect) => {
     const STATUS_MAP = {
-      '异常': 'Nieprawidłowy',
-      '正常': 'Normalny',
-      '空': 'Pusty',
-      '空仓': 'Pusty',
-      '缺水': 'Brak wody',
-      '无水': 'Brak wody',
-      '低水位': 'Niski poziom',
-      '高水位': 'Wysoki poziom'
+      '异常': 'Nieprawidłowy', '正常': 'Normalny',
+      '空': 'Pusty', '空仓': 'Pusty',
+      '缺水': 'Brak wody', '无水': 'Brak wody',
+      '低水位': 'Niski poziom', '高水位': 'Wysoki poziom',
     };
     const levelPL = STATUS_MAP[level] || level;
     return `🚱 *PROBLEM Z POZIOMEM WODY*\n` +
@@ -184,15 +192,10 @@ module.exports = {
 
   alertWaterPressure: (deviceId, location, pressure, lastConnect) => {
     const STATUS_MAP = {
-      '异常': 'Nieprawidłowy',
-      '正常': 'Normalny',
-      '空': 'Pusty',
-      '空仓': 'Pusty',
-      '缺水': 'Brak wody',
-      '无水': 'Brak wody',
-      '低压力': 'Niskie ciśnienie',
-      '高压力': 'Wysokie ciśnienie',
-      '无压力': 'Brak ciśnienia'
+      '异常': 'Nieprawidłowy', '正常': 'Normalny',
+      '空': 'Pusty', '空仓': 'Pusty',
+      '缺水': 'Brak wody', '无水': 'Brak wody',
+      '低压力': 'Niskie ciśnienie', '高压力': 'Wysokie ciśnienie', '无压力': 'Brak ciśnienia',
     };
     const pressurePL = STATUS_MAP[pressure] || pressure;
     return `💨 *PROBLEM Z CIŚNIENIEM WODY*\n` +
@@ -203,7 +206,6 @@ module.exports = {
       `💡 Sprawdź podłączenie wodociągu`;
   },
 
-  // 10. Problem rozwiązany
   alertResolved: (deviceId, location, type) =>
     `✅ *PROBLEM ROZWIĄZANY*\n` +
     `📍 ${location}\n` +

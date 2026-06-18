@@ -8,7 +8,8 @@ const USERS_FILE = './data/users.json';
 // Map: telegramChatId -> UserState
 const users = new Map();
 const dailyReportSentByDate = new Map(); // saler -> date
-
+const weeklyReportSentByDate = new Map();  // saler -> 'YYYY-[W]WW'
+const monthlyReportSentByDate = new Map(); // saler -> 'YYYY-MM'
 function createUserState(chatId, appid, saler) {
   return {
     chatId: String(chatId),
@@ -145,6 +146,19 @@ function loadUsers() {
   }
 }
 
+function getWeeklyReportSent(saler) {
+  return weeklyReportSentByDate.get(saler) || null;
+}
+function setWeeklyReportSent(saler, key) {
+  weeklyReportSentByDate.set(saler, key);
+}
+function getMonthlyReportSent(saler) {
+  return monthlyReportSentByDate.get(saler) || null;
+}
+function setMonthlyReportSent(saler, key) {
+  monthlyReportSentByDate.set(saler, key);
+}
+
 loadUsers();
 module.exports = {
   getUser,
@@ -152,6 +166,12 @@ module.exports = {
   getAllUsers,
   getDailyReportSent,
   setDailyReportSent,
+  getDailyReportSent,
+  setDailyReportSent,
+  getWeeklyReportSent,
+  setWeeklyReportSent,
+  getMonthlyReportSent,
+  setMonthlyReportSent,
   getUsersBySaler,
   isMuted,
   mute,

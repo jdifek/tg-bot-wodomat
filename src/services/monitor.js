@@ -50,36 +50,37 @@ async function runMonitorCycle(userState, options = {}) {
   const now = Date.now();
 
   try {
-    // 1. Aktualizacja listy urządzeń — co 10 minut lub wymuszenie
-    if (forceRefresh || now - userState.deviceIdsLastUpdate > 10 * 60 * 1000) {
+    // 1. Список устройств — по интервалу или принудительно
+    if (forceRefresh || now - userState.deviceIdsLastUpdate > cfg.pollIntervalMs) {
       await refreshDeviceList(userState);
     }
 
-    // 2. Sprawdzanie wyjątków (offline, woda, ciśnienie itd.) — wymuszenie lub co 10 minut
-    if (forceRefresh || !userState._lastExceptionCheck || now - userState._lastExceptionCheck > 10 * 60 * 1000) {
+    // 2. Исключения (offline, вода, давление)
+    if (forceRefresh || !userState._lastExceptionCheck || now - userState._lastExceptionCheck > cfg.pollIntervalMs) {
       await checkExceptions(userState);
-      userState._lastExceptionCheck = now;
+      // при forceRefresh сбрасываем таймер в 0 чтобы следующий cron тоже отработал
+      userState._lastExceptionCheck = forceRefresh ? 0 : now;
     }
 
-    // 3. Szczegóły urządzeń (temperatura) w batchach
-    if (!userState._lastDetailCheck || now - userState._lastDetailCheck > 10 * 60 * 1000) {
+    // 3. Детали устройств (температура) батчами
+    if (forceRefresh || !userState._lastDetailCheck || now - userState._lastDetailCheck > cfg.pollIntervalMs) {
       await checkDeviceBatch(userState);
-      userState._lastDetailCheck = now;
+      userState._lastDetailCheck = forceRefresh ? 0 : now;
     }
 
-    // 4. Płatności QR i sprzedaż bez rozlewu — co 30 minut
+    // 4. QR платежи — каждые 30 минут
     if (!userState._lastQrCheck || now - userState._lastQrCheck > 30 * 60 * 1000) {
       await checkQrPayments(userState);
       userState._lastQrCheck = now;
     }
 
-    // 5. Karty SIM — co godzinę
+    // 5. SIM карты — каждый час
     if (!userState._lastSimCheck || now - userState._lastSimCheck > 60 * 60 * 1000) {
       await checkSimCards(userState);
       userState._lastSimCheck = now;
     }
 
-    // 6. Raport dzienny
+    // 6. Ежедневный отчёт
     if (!skipDailyReport) {
       await checkDailyReport(userState);
     }
@@ -129,6 +130,7 @@ async function checkExceptions(userState) {
     for (const item of items) {
       const deviceId = item.deviceId;
       const location = item.name || userState.devices.get(deviceId)?.location || deviceId;
+
       if (item.lastConnect) {
         const dev = userState.devices.get(deviceId) || {};
         userState.devices.set(deviceId, {
@@ -137,13 +139,15 @@ async function checkExceptions(userState) {
           lastConnect: item.lastConnect,
         });
       }
-      // ── Status offline ──
+
+      // ── Статус offline ──
       const alertKeyOffline = `offline_${deviceId}`;
       const isOfflineByStatus = item.statusMsg === '离线';
 
       let diffMin = 0;
       if (item.lastConnect) {
-        const lastSeen = dayjs.tz(item.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Europe/Warsaw');
+        // API возвращает время в UTC+8 (Китай)
+        const lastSeen = dayjs.tz(item.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Asia/Shanghai');
         diffMin = getWarsawNow().diff(lastSeen, 'minute');
       }
 
@@ -159,30 +163,29 @@ async function checkExceptions(userState) {
         state.resolveAlertForAll(saler, alertKeyOffline, t.alertStatusOnline(deviceId, location));
       }
 
-      // ── Poziom wody ──
+      // ── Уровень воды ──
       const alertKeyWater = `water_level_${deviceId}`;
       if (item.waterLevel && !NORMAL_VALUES.includes(item.waterLevel)) {
         state.addAlertToAll(saler, alertKeyWater, {
           type: 'water_level',
-          msg: t.alertWaterLevel(deviceId, location, item.waterLevel, fromApiTime(item.lastConnect))
+          msg: t.alertWaterLevel(deviceId, location, item.waterLevel, fromApiTime(item.lastConnect)),
         });
       } else {
         state.resolveAlertForAll(saler, alertKeyWater, t.alertResolved(deviceId, location, 'water_level'));
       }
 
-      // ── Ciśnienie wody ──
+      // ── Давление воды ──
       const alertKeyPressure = `water_pressure_${deviceId}`;
       if (type !== 'shop_water' && item.waterPressure && !NORMAL_VALUES.includes(item.waterPressure)) {
         state.addAlertToAll(saler, alertKeyPressure, {
           type: 'water_pressure',
-          msg: t.alertWaterPressure(deviceId, location, item.waterPressure, fromApiTime(item.lastConnect))
-
+          msg: t.alertWaterPressure(deviceId, location, item.waterPressure, fromApiTime(item.lastConnect)),
         });
       } else {
         state.resolveAlertForAll(saler, alertKeyPressure, t.alertResolved(deviceId, location, 'water_pressure'));
       }
 
-      // ── Niska temperatura ──
+      // ── Температура ──
       if (item.temp !== undefined && item.temp !== null && item.temp !== '') {
         checkTemp(userState, deviceId, location, parseFloat(item.temp));
       }
@@ -393,14 +396,113 @@ async function checkDailyReport(userState) {
 // ================================================================
 // Raporty dzienne dla wszystkich saler (wywoływane raz w cron)
 // ================================================================
+// Новая вспомогательная функция сбора данных за произвольный период
+async function buildRangeReport(userState, from, to, title) {
+  const { appid, saler } = userState;
+  const beginTime = toApiTime(from);
+  const endTime = toApiTime(to);
+
+  const allRecords = [];
+  let page = 1;
+  while (true) {
+    const data = await api.getConsumeList(appid, saler, beginTime, endTime, page);
+    if (!data || data.code !== 0 || !Array.isArray(data.data) || data.data.length === 0) break;
+    allRecords.push(...data.data);
+    if (data.data.length < 20) break;
+    page++;
+    await api.sleep(cfg.requestDelayMs);
+  }
+
+  const byDevice = {};
+  for (const rec of allRecords) {
+    const deviceId = rec.shop_num || rec.card_num;
+    if (!deviceId) continue;
+    const location = rec.location || userState.devices.get(deviceId)?.location || deviceId;
+    if (!byDevice[deviceId]) byDevice[deviceId] = { location, liters: 0, amount: 0 };
+    byDevice[deviceId].liters += parseFloat(rec.water1 || 0) + parseFloat(rec.water2 || 0);
+    byDevice[deviceId].amount += parseFloat(rec.cost_value || rec.value || 0);
+  }
+
+  let totalLiters = 0, totalAmount = 0;
+  const lines = [`${title} (${from.format('DD.MM')}–${to.format('DD.MM.YYYY')})`];
+
+  const entries = Object.values(byDevice);
+  if (entries.length === 0) {
+    lines.push('Нет данных за период');
+  } else {
+    for (const e of entries) {
+      lines.push(`${e.location} — ${e.liters.toFixed(1)} L — ${e.amount.toFixed(2)} руб`);
+      totalLiters += e.liters;
+      totalAmount += e.amount;
+    }
+    lines.push(`\n*Итого: ${totalLiters.toFixed(1)} L — ${totalAmount.toFixed(2)} руб*`);
+  }
+
+  state.addPendingAlertToAll(saler, {
+    type: 'period_report',
+    isReport: true,
+    msg: lines.join('\n'),
+  });
+
+  logger.info(`[${saler}] Period report built: ${title}, records: ${allRecords.length}`);
+}
+
+// Еженедельный отчёт (каждый понедельник в час ежедневного отчёта)
+async function checkWeeklyReport(userState) {
+  const { saler } = userState;
+  const now = getWarsawNow();
+  const hour = now.hour();
+  const dayOfWeek = now.day(); // 0=воскресенье, 1=понедельник
+
+  if (dayOfWeek !== 1) return;
+  if (hour !== cfg.dailyReportHour) return;
+
+  const weekKey = now.format('YYYY-[W]WW');
+  if (state.getWeeklyReportSent(saler) === weekKey) return;
+  state.setWeeklyReportSent(saler, weekKey);
+
+  // Прошлая неделя: пн–вс
+  const startOfLastWeek = now.subtract(7, 'day').startOf('day');
+  const endOfLastWeek = now.subtract(1, 'day').endOf('day');
+
+  logger.info(`[${saler}] Building weekly report: ${startOfLastWeek.format('DD.MM')}–${endOfLastWeek.format('DD.MM.YYYY')}`);
+  await buildRangeReport(userState, startOfLastWeek, endOfLastWeek, '📊 Итог за неделю');
+}
+
+// Месячный отчёт (1-го числа каждого месяца в час ежедневного отчёта)
+async function checkMonthlyReport(userState) {
+  const { saler } = userState;
+  const now = getWarsawNow();
+  const hour = now.hour();
+  const dayOfMonth = now.date();
+
+  if (dayOfMonth !== 1) return;
+  if (hour !== cfg.dailyReportHour) return;
+
+  const lastMonth = now.subtract(1, 'month');
+  const monthKey = lastMonth.format('YYYY-MM');
+  if (state.getMonthlyReportSent(saler) === monthKey) return;
+  state.setMonthlyReportSent(saler, monthKey);
+
+  const startOfLastMonth = lastMonth.startOf('month');
+  const endOfLastMonth = lastMonth.endOf('month');
+
+  logger.info(`[${saler}] Building monthly report: ${monthKey}`);
+  await buildRangeReport(
+    userState,
+    startOfLastMonth,
+    endOfLastMonth,
+    `📊 Итог за ${lastMonth.format('MMMM YYYY')}`
+  );
+}
+
+// Обновлённый runDailyReportsForAllSalers — теперь включает weekly и monthly
 async function runDailyReportsForAllSalers() {
   const users = state.getAllUsers();
   const processedSalers = new Set();
 
   for (const userState of users) {
     const { saler } = userState;
-
-    // Pomijamy, jeśli już przetworzono ten saler
     if (processedSalers.has(saler)) continue;
     processedSalers.add(saler);
 
@@ -409,7 +511,20 @@ async function runDailyReportsForAllSalers() {
     } catch (err) {
       logger.error(`🔥 Daily report error for saler=${saler}: ${err.message}`);
     }
+
+    // try {
+    //   await checkWeeklyReport(userState);
+    // } catch (err) {
+    //   logger.error(`🔥 Weekly report error for saler=${saler}: ${err.message}`);
+    // }
+
+    // try {
+    //   await checkMonthlyReport(userState);
+    // } catch (err) {
+    //   logger.error(`🔥 Monthly report error for saler=${saler}: ${err.message}`);
+    // }
   }
 }
 
+// Обновить экспорт:
 module.exports = { runMonitorCycle, runDailyReportsForAllSalers };

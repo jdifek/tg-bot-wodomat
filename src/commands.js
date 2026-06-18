@@ -1,4 +1,3 @@
-// src/commands.js — обработчики команд Telegram бота
 'use strict';
 
 const dayjs = require('dayjs');
@@ -13,6 +12,7 @@ const logger = require('./logger');
 const api = require('./services/apiClient');
 const state = require('./services/stateManager');
 const sender = require('./services/sender');
+const { checkSubscription } = require('./services/subscriptionChecker');
 const t = require('./locales/' + cfg.locale);
 
 // ================================================================
@@ -38,6 +38,19 @@ function dayEndWarsaw(dateStr) {
 }
 
 // ================================================================
+// Проверка подписки
+// ================================================================
+
+async function requireSubscription(ctx, userState) {
+  const active = await checkSubscription(userState.appid, userState.saler);
+  if (!active) {
+    await ctx.reply(t.subscriptionExpired, { parse_mode: 'Markdown' });
+    return false;
+  }
+  return true;
+}
+
+// ================================================================
 // /start
 // ================================================================
 async function handleStart(ctx) {
@@ -48,6 +61,10 @@ async function handleStart(ctx) {
 
   const existing = state.getUser(chatId);
   if (existing && !param) {
+    const active = await checkSubscription(existing.appid, existing.saler);
+    if (!active) {
+      return ctx.reply(t.subscriptionExpired, { parse_mode: 'Markdown' });
+    }
     return ctx.reply(t.alreadyRegistered(existing.saler), { parse_mode: 'Markdown' });
   }
 
@@ -62,14 +79,19 @@ async function handleStart(ctx) {
   }
 
   if (!appid || !saler) {
-    return ctx.reply('❌ Nieprawidłowy link startowy', { parse_mode: 'Markdown' });
+    return ctx.reply(t.invalidStartParam, { parse_mode: 'Markdown' });
   }
 
-  await ctx.reply('⏳ Sprawdzanie połączenia z API...');
+  await ctx.reply(t.checkingApi);
   const ok = await api.testAuth(appid, saler);
 
   if (!ok) {
-    return ctx.reply('❌ Błąd autoryzacji', { parse_mode: 'Markdown' });
+    return ctx.reply(t.authFailed, { parse_mode: 'Markdown' });
+  }
+
+  const active = await checkSubscription(appid, saler);
+  if (!active) {
+    return ctx.reply(t.subscriptionExpired, { parse_mode: 'Markdown' });
   }
 
   state.setUser(chatId, appid, saler);
@@ -94,6 +116,7 @@ async function handleStart(ctx) {
 async function handleStatus(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
+  if (!await requireSubscription(ctx, userState)) return;
 
   const total = userState.allDeviceIds.length;
   const alerts = userState.activeAlerts.size;
@@ -109,8 +132,8 @@ async function handleStatus(ctx) {
     t.totalDevices(total),
     alerts > 0 ? t.activeAlerts(alerts) : t.noAlerts,
     '',
-    `🏪 Konto: \`${userState.saler}\``,
-    `🕐 Zaktualizowano: ${dayjs().format('DD.MM HH:mm')}`,
+    `🏪 ${t.accountLabel}: \`${userState.saler}\``,
+    `🕐 ${t.updatedLabel}: ${dayjs().format('DD.MM HH:mm')}`,
   ];
 
   await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
@@ -122,11 +145,30 @@ async function handleStatus(ctx) {
 async function handleDevices(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
+  if (!await requireSubscription(ctx, userState)) return;
 
-  const lines = ['📟 Lista urządzeń:'];
+  await ctx.reply('🔄 Обновляю данные об устройствах...', { parse_mode: 'Markdown' });
+
+  const monitor = require('./services/monitor');
+  try {
+    await monitor.runMonitorCycle(userState, {
+      checkDeviceDetail: true,
+      checkExceptions: true,
+      checkQrPayments: false,
+      skipDailyReport: true,
+      forceRefresh: true,
+    });
+  } catch (err) {
+    logger.error(`Error in devices command: ${err.message}`);
+  }
+
+  // Сбрасываем pendingAlerts чтобы не задвоились в следующем flush
+  state.flushPendingAlerts(userState);
+
+  const lines = [t.devicesHeader];
 
   if (userState.allDeviceIds.length === 0) {
-    lines.push('Brak urządzeń');
+    lines.push(t.devicesEmpty);
   } else {
     for (const id of userState.allDeviceIds) {
       const d = userState.devices.get(id);
@@ -135,7 +177,8 @@ async function handleDevices(ctx) {
       const lastConn = d?.lastConnect
         ? `(${dayjs(d.lastConnect).format('DD.MM HH:mm')})`
         : '';
-      lines.push(`${id} — ${loc} — ${isOff ? '🔴 offline' : '🟢 online'} ${lastConn}`);
+      const status = isOff ? t.statusOffline : t.statusOnline;
+      lines.push(`${id} — ${loc} — ${status} ${lastConn}`);
     }
   }
 
@@ -156,10 +199,10 @@ async function handleDevices(ctx) {
 async function handleAlerts(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
+  if (!await requireSubscription(ctx, userState)) return;
 
-  await ctx.reply('⏳ Sprawdzanie aktualnego stanu...');
+  await ctx.reply(t.checkingState);
 
-  // Uruchamiamy sprawdzenie aktualnego stanu
   const monitor = require('./services/monitor');
   try {
     await monitor.runMonitorCycle(userState, {
@@ -167,23 +210,25 @@ async function handleAlerts(ctx) {
       checkExceptions: true,
       checkQrPayments: false,
       skipDailyReport: true,
-      forceRefresh: true, // Wymuszamy odświeżenie stanu
+      forceRefresh: true,
     });
   } catch (err) {
     logger.error(`Error in alerts command: ${err.message}`);
-    return ctx.reply('❌ Błąd podczas sprawdzania stanu', { parse_mode: 'Markdown' });
+    return ctx.reply(t.errorCheckingState, { parse_mode: 'Markdown' });
   }
 
-  // Pokazujemy aktualne alerty
+  // Сбрасываем pendingAlerts чтобы не задвоились в следующем flush
+  state.flushPendingAlerts(userState);
+
   if (userState.activeAlerts.size === 0) {
-    return ctx.reply('✅ BRAK BŁĘDÓW', { parse_mode: 'Markdown' });
+    return ctx.reply(t.noProblems, { parse_mode: 'Markdown' });
   }
 
-  const lines = [`⚠️ *Aktualne problemy (${userState.activeAlerts.size}):*\n`];
+  const lines = [`⚠️ *${t.currentProblems(userState.activeAlerts.size)}*\n`];
 
   for (const [key, alert] of userState.activeAlerts) {
     const since = dayjs(alert.since).format('DD.MM HH:mm');
-    lines.push(`${alert.msg}\n⏱ _od ${since}_`);
+    lines.push(`${alert.msg}\n⏱ _${t.sinceLabel} ${since}_`);
     lines.push('──────────────');
   }
 
@@ -196,8 +241,9 @@ async function handleAlerts(ctx) {
 async function handleReport(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
+  if (!await requireSubscription(ctx, userState)) return;
 
-  await ctx.reply('⏳ Pobieranie danych...');
+  await ctx.reply(t.fetchingData);
 
   const { appid, saler } = userState;
 
@@ -212,11 +258,8 @@ async function handleReport(ctx) {
 
   while (true) {
     const data = await api.getConsumeList(appid, saler, beginTime, endTime, page);
-
     if (!data || data.code !== 0 || !data.data?.length) break;
-
     allRecords.push(...data.data);
-
     if (data.data.length < 20) break;
     page++;
   }
@@ -238,19 +281,18 @@ async function handleReport(ctx) {
   }
 
   let totalL = 0, totalA = 0;
-  const lines = [`📊 Raport za ${todayStr}`];
-
+  const lines = [t.reportHeader(todayStr)];
   const entries = Object.values(byDevice);
 
   if (!entries.length) {
-    lines.push('Brak danych');
+    lines.push(t.reportEmpty);
   } else {
     for (const e of entries) {
       lines.push(`${e.location} — ${e.liters.toFixed(1)} L — ${e.amount.toFixed(2)} zł`);
       totalL += e.liters;
       totalA += e.amount;
     }
-    lines.push(`TOTAL: ${totalL.toFixed(1)} L — ${totalA.toFixed(2)} zł`);
+    lines.push(t.reportTotal(totalL.toFixed(1), totalA.toFixed(2)));
   }
 
   await sender.safeSend({ telegram: ctx.telegram }, String(ctx.chat.id), lines.join('\n'));
@@ -262,9 +304,10 @@ async function handleReport(ctx) {
 async function handleMute(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return;
+  if (!await requireSubscription(ctx, userState)) return;
 
   state.mute(userState, 1);
-  await ctx.reply('🔕 Powiadomienia wyciszone na 1 godzinę');
+  await ctx.reply(t.mutedFor(1), { parse_mode: 'Markdown' });
 }
 
 // ================================================================
@@ -273,9 +316,10 @@ async function handleMute(ctx) {
 async function handleUnmute(ctx) {
   const userState = state.getUser(String(ctx.chat.id));
   if (!userState) return;
+  if (!await requireSubscription(ctx, userState)) return;
 
   state.unmute(userState);
-  await ctx.reply('🔔 Powiadomienia włączone');
+  await ctx.reply(t.unmuted, { parse_mode: 'Markdown' });
 }
 
 // ================================================================
