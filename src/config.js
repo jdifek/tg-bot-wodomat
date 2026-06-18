@@ -6,7 +6,7 @@ const cfg = {
   botToken:        process.env.BOT_TOKEN,
   locale:          (process.env.LOCALE || 'ru').toLowerCase(),
   apiBaseUrl:      process.env.API_BASE_URL || 'http://api.happy-ti.com:2028',
-  secondBackUrl:   process.env.SECOND_BACK_AUTH_PL,
+  secondBackUrl:   process.env.SECOND_BACK_AUTH_PL || 'https://your-web-backend.com',
 
   batchSize:       parseInt(process.env.BATCH_SIZE        || '90',  10),
   requestDelayMs:  parseInt(process.env.REQUEST_DELAY_MS  || '350', 10),
