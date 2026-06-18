@@ -147,7 +147,7 @@ async function handleDevices(ctx) {
   if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
   if (!await requireSubscription(ctx, userState)) return;
 
-  await ctx.reply('🔄 Обновляю данные об устройствах...', { parse_mode: 'Markdown' });
+  await ctx.reply('🔄', { parse_mode: 'Markdown' });
 
   const monitor = require('./services/monitor');
   try {
