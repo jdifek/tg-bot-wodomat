@@ -55,32 +55,25 @@ async function runMonitorCycle(userState, options = {}) {
       await refreshDeviceList(userState);
     }
 
-    // 2. Исключения (offline, вода, давление)
+    // 2. Исключения (offline, вода, давление, температура — всё из exception-status-query)
     if (forceRefresh || !userState._lastExceptionCheck || now - userState._lastExceptionCheck > cfg.pollIntervalMs) {
       await checkExceptions(userState);
-      // при forceRefresh сбрасываем таймер в 0 чтобы следующий cron тоже отработал
       userState._lastExceptionCheck = forceRefresh ? 0 : now;
     }
 
-    // 3. Детали устройств (температура) батчами
-    if (forceRefresh || !userState._lastDetailCheck || now - userState._lastDetailCheck > cfg.pollIntervalMs) {
-      await checkDeviceBatch(userState);
-      userState._lastDetailCheck = forceRefresh ? 0 : now;
-    }
-
-    // 4. QR платежи — каждые 30 минут
+    // 3. QR платежи — каждые 30 минут
     if (!userState._lastQrCheck || now - userState._lastQrCheck > 30 * 60 * 1000) {
       await checkQrPayments(userState);
       userState._lastQrCheck = now;
     }
 
-    // 5. SIM карты — каждый час
+    // 4. SIM карты — каждый час
     if (!userState._lastSimCheck || now - userState._lastSimCheck > 60 * 60 * 1000) {
       await checkSimCards(userState);
       userState._lastSimCheck = now;
     }
 
-    // 6. Ежедневный отчёт
+    // 5. Ежедневный отчёт
     if (!skipDailyReport) {
       await checkDailyReport(userState);
     }
