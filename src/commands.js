@@ -173,8 +173,8 @@ async function handleDevices(ctx) {
     const loc = d?.location || id;
     const isOff = userState.activeAlerts.has(`offline_${id}`);
     const lastConn = d?.lastConnect
-      ? `(${dayjs(d.lastConnect).format('DD.MM HH:mm')})`
-      : '';
+    ? `(${dayjs.tz(d.lastConnect, 'Asia/Shanghai').tz('Europe/Warsaw').format('DD.MM HH:mm')})`
+    : '';
     const entry = `${id} — ${loc} ${lastConn}`;
     if (isOff) {
       offlineList.push(`🔴 ${entry}`);

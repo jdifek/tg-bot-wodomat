@@ -98,12 +98,13 @@ async function refreshDeviceList(userState) {
         userState.devices.set(d.id, {
           location: d.location || d.id,
           type,
-          lastConnect: d.lastConnect || null,
+          lastConnect: d.lastConnect || d.lastconnect || null,
         });
       } else {
         const existing = userState.devices.get(d.id);
         existing.location = d.location || d.id;
-        if (d.lastConnect) existing.lastConnect = d.lastConnect;
+        const lc = d.lastConnect || d.lastconnect;
+        if (lc) existing.lastConnect = lc;
       }
     }
     await api.sleep(cfg.requestDelayMs);
@@ -193,22 +194,35 @@ async function checkExceptions(userState) {
     await api.sleep(cfg.requestDelayMs);
   }
 
-  // Дополнительная проверка: все устройства из кэша, которые не вернул API
-  for (const deviceId of userState.allDeviceIds) {
-    const dev = userState.devices.get(deviceId);
-    if (!dev?.lastConnect) continue;
-
-    const lastSeen = dayjs.tz(dev.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Asia/Shanghai');
-    const diffMin = getWarsawNow().diff(lastSeen, 'minute');
-    const alertKeyOffline = `offline_${deviceId}`;
-
-    if (diffMin >= cfg.offlineMinutes) {
-      state.addAlertToAll(saler, alertKeyOffline, {
-        type: 'offline',
-        msg: t.alertOffline(deviceId, dev.location || deviceId, diffMin, fromApiTime(dev.lastConnect)),
-      });
-    }
+// Дополнительная проверка: все устройства из кэша, которые не вернул API
+const processedByException = new Set();
+for (const type of cfg.deviceTypes) {
+  const data = await api.getExceptionDevices(appid, saler, type, 1, 200);
+  if (data?.code === 0 && data.data?.items) {
+    for (const item of data.data.items) processedByException.add(item.deviceId);
   }
+}
+
+for (const deviceId of userState.allDeviceIds) {
+  if (processedByException.has(deviceId)) continue;
+
+  const dev = userState.devices.get(deviceId);
+  if (!dev?.lastConnect) continue;
+
+  const lastSeen = dayjs.tz(dev.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Asia/Shanghai');
+  const diffMin = getWarsawNow().diff(lastSeen, 'minute');
+  const alertKeyOffline = `offline_${deviceId}`;
+
+  if (diffMin >= cfg.offlineMinutes) {
+    state.addAlertToAll(saler, alertKeyOffline, {
+      type: 'offline',
+      msg: t.alertOffline(deviceId, dev.location || deviceId, diffMin, fromApiTime(dev.lastConnect)),
+    });
+  } else if (userState.activeAlerts.has(alertKeyOffline)) {
+    state.resolveAlertForAll(saler, alertKeyOffline,
+      t.alertStatusOnline(deviceId, dev.location || deviceId));
+  }
+}
   // Проверка температуры по всем устройствам через getDeviceDetail
   for (const deviceId of userState.allDeviceIds) {
     const detail = await api.getDeviceDetail(userState.appid, userState.saler, deviceId);
