@@ -10,7 +10,6 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(customParseFormat);
 
-// Дефолтная таймзона бота
 dayjs.tz.setDefault('Europe/Warsaw');
 
 const cfg = require('../config');
@@ -19,30 +18,26 @@ const api = require('./apiClient');
 const state = require('./stateManager');
 const t = require('../locales/' + cfg.locale);
 
-// Wartości "normalne" z API
 const NORMAL_VALUES = ['正常', 'normal', 'Normal', ''];
 
 // ================================================================
-// Funkcje pomocnicze czasu
+// Утилиты времени
 // ================================================================
 function getWarsawNow() {
   return dayjs().tz('Europe/Warsaw');
 }
+
 function fromApiTime(apiTimeStr) {
   if (!apiTimeStr) return null;
-  // API zwraca czas w strefie czasowej Chin (UTC+8), konwertujemy do Europe/Warsaw
   return dayjs.tz(apiTimeStr, 'Asia/Shanghai').tz('Europe/Warsaw').format('DD.MM.YYYY HH:mm:ss');
 }
 
-/**
- * Konwertuje czas Warszawy na format oczekiwany przez API (UTC+8)
- */
 function toApiTime(date) {
   return date.utc().add(8, 'hour').format('YYYY-MM-DD HH:mm:ss');
 }
 
 // ================================================================
-// GŁÓWNA FUNKCJA — wywoływana co 10 minut dla każdego użytkownika
+// ГЛАВНАЯ ФУНКЦИЯ
 // ================================================================
 async function runMonitorCycle(userState, options = {}) {
   const { skipDailyReport = false, forceRefresh = false } = options;
@@ -50,27 +45,27 @@ async function runMonitorCycle(userState, options = {}) {
   const now = Date.now();
 
   try {
-    // 1. Список устройств — по интервалу или принудительно
+    // 1. Список устройств
     if (forceRefresh || now - userState.deviceIdsLastUpdate > cfg.pollIntervalMs) {
       await refreshDeviceList(userState);
     }
 
-    // 2. Исключения (offline, вода, давление, температура — всё из exception-status-query)
-    if (forceRefresh || !userState._lastExceptionCheck || now - userState._lastExceptionCheck > cfg.pollIntervalMs) {
+    // 2. Исключения — per-saler таймер
+    if (forceRefresh || now - state.getLastExceptionCheck(saler) > cfg.pollIntervalMs) {
       await checkExceptions(userState);
-      userState._lastExceptionCheck = forceRefresh ? 0 : now;
+      if (!forceRefresh) state.setLastExceptionCheck(saler, now);
     }
 
-    // 3. QR платежи — каждые 30 минут
-    if (!userState._lastQrCheck || now - userState._lastQrCheck > 30 * 60 * 1000) {
+    // 3. QR платежи — per-saler таймер, каждые 30 минут
+    if (now - state.getLastQrCheck(saler) > 30 * 60 * 1000) {
       await checkQrPayments(userState);
-      userState._lastQrCheck = now;
+      state.setLastQrCheck(saler, now);
     }
 
-    // 4. SIM карты — каждый час
-    if (!userState._lastSimCheck || now - userState._lastSimCheck > 60 * 60 * 1000) {
+    // 4. SIM карты — per-saler таймер, каждый час
+    if (now - state.getLastSimCheck(saler) > 60 * 60 * 1000) {
       await checkSimCards(userState);
-      userState._lastSimCheck = now;
+      state.setLastSimCheck(saler, now);
     }
 
     // 5. Ежедневный отчёт
@@ -84,7 +79,7 @@ async function runMonitorCycle(userState, options = {}) {
 }
 
 // ================================================================
-// 1. Aktualizacja listy urządzeń
+// 1. Обновление списка устройств
 // ================================================================
 async function refreshDeviceList(userState) {
   const { appid, saler } = userState;
@@ -116,7 +111,7 @@ async function refreshDeviceList(userState) {
 }
 
 // ================================================================
-// 2. Sprawdzanie wyjątków (exception-status-query)
+// 2. Проверка исключений
 // ================================================================
 async function checkExceptions(userState) {
   const { appid, saler } = userState;
@@ -133,20 +128,15 @@ async function checkExceptions(userState) {
 
       if (item.lastConnect) {
         const dev = userState.devices.get(deviceId) || {};
-        userState.devices.set(deviceId, {
-          ...dev,
-          location,
-          lastConnect: item.lastConnect,
-        });
+        userState.devices.set(deviceId, { ...dev, location, lastConnect: item.lastConnect });
       }
 
-      // ── Статус offline ──
+      // ── Offline ──
       const alertKeyOffline = `offline_${deviceId}`;
       const isOfflineByStatus = item.statusMsg === '离线';
 
       let diffMin = 0;
       if (item.lastConnect) {
-        // API возвращает время в UTC+8 (Китай)
         const lastSeen = dayjs.tz(item.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Asia/Shanghai');
         diffMin = getWarsawNow().diff(lastSeen, 'minute');
       }
@@ -194,36 +184,36 @@ async function checkExceptions(userState) {
     await api.sleep(cfg.requestDelayMs);
   }
 
-// Дополнительная проверка: все устройства из кэша, которые не вернул API
-const processedByException = new Set();
-for (const type of cfg.deviceTypes) {
-  const data = await api.getExceptionDevices(appid, saler, type, 1, 200);
-  if (data?.code === 0 && data.data?.items) {
-    for (const item of data.data.items) processedByException.add(item.deviceId);
+  // Дополнительная проверка устройств не вернувшихся из API
+  const processedByException = new Set();
+  for (const type of cfg.deviceTypes) {
+    const data = await api.getExceptionDevices(appid, saler, type, 1, 200);
+    if (data?.code === 0 && data.data?.items) {
+      for (const item of data.data.items) processedByException.add(item.deviceId);
+    }
   }
-}
 
-for (const deviceId of userState.allDeviceIds) {
-  if (processedByException.has(deviceId)) continue;
+  for (const deviceId of userState.allDeviceIds) {
+    if (processedByException.has(deviceId)) continue;
 
-  const dev = userState.devices.get(deviceId);
-  if (!dev?.lastConnect) continue;
+    const dev = userState.devices.get(deviceId);
+    if (!dev?.lastConnect) continue;
 
-  const lastSeen = dayjs.tz(dev.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Asia/Shanghai');
-  const diffMin = getWarsawNow().diff(lastSeen, 'minute');
-  const alertKeyOffline = `offline_${deviceId}`;
+    const lastSeen = dayjs.tz(dev.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Asia/Shanghai');
+    const diffMin = getWarsawNow().diff(lastSeen, 'minute');
+    const alertKeyOffline = `offline_${deviceId}`;
 
-  if (diffMin >= cfg.offlineMinutes) {
-    state.addAlertToAll(saler, alertKeyOffline, {
-      type: 'offline',
-      msg: t.alertOffline(deviceId, dev.location || deviceId, diffMin, fromApiTime(dev.lastConnect)),
-    });
-  } else if (userState.activeAlerts.has(alertKeyOffline)) {
-    state.resolveAlertForAll(saler, alertKeyOffline,
-      t.alertStatusOnline(deviceId, dev.location || deviceId));
+    if (diffMin >= cfg.offlineMinutes) {
+      state.addAlertToAll(saler, alertKeyOffline, {
+        type: 'offline',
+        msg: t.alertOffline(deviceId, dev.location || deviceId, diffMin, fromApiTime(dev.lastConnect)),
+      });
+    } else if (userState.activeAlerts.has(alertKeyOffline)) {
+      state.resolveAlertForAll(saler, alertKeyOffline, t.alertStatusOnline(deviceId, dev.location || deviceId));
+    }
   }
-}
-  // Проверка температуры по всем устройствам через getDeviceDetail
+
+  // Проверка температуры через getDeviceDetail
   for (const deviceId of userState.allDeviceIds) {
     const detail = await api.getDeviceDetail(userState.appid, userState.saler, deviceId);
     if (!detail || detail.code !== 0 || !detail.data) continue;
@@ -238,17 +228,16 @@ for (const deviceId of userState.allDeviceIds) {
 
     await api.sleep(cfg.requestDelayMs);
   }
-
 }
 
 // ================================================================
-// 3. Sprawdzanie temperatury (low / high)
+// 3. Температура
 // ================================================================
 function checkTemp(userState, deviceId, location, temp) {
   if (isNaN(temp)) return;
   const { saler } = userState;
 
-  const keyLow = `temp_low_${deviceId}`;
+  const keyLow  = `temp_low_${deviceId}`;
   const keyHigh = `temp_high_${deviceId}`;
 
   if (temp < cfg.tempMin) {
@@ -271,14 +260,17 @@ function checkTemp(userState, deviceId, location, temp) {
 }
 
 // ================================================================
-// 4. Płatności QR i sprzedaż bez rozlewu
+// 4. QR-платежи и продажи без розлива
 // ================================================================
 async function checkQrPayments(userState) {
   const { appid, saler } = userState;
 
+  // ── Per-saler Set для дедупликации ──
+  const sentQr = state.getSentQrPayments(saler);
+
   const nowWarsaw = getWarsawNow();
-  const beginTime = toApiTime(nowWarsaw.subtract(35, 'minute')); // 30 мин + запас
-  const endTime = toApiTime(nowWarsaw);
+  const beginTime = toApiTime(nowWarsaw.subtract(35, 'minute'));
+  const endTime   = toApiTime(nowWarsaw);
 
   logger.info(`[${saler}] QR check: ${beginTime} → ${endTime}`);
 
@@ -286,13 +278,17 @@ async function checkQrPayments(userState) {
   const rechargeData = await api.getRechargeList(appid, saler, beginTime, endTime, 1);
   if (rechargeData?.code === 0 && Array.isArray(rechargeData.data)) {
     for (const rec of rechargeData.data) {
-      const payId = rec.alipay_number || rec.key_id;
-      if (userState.sentQrPayments.has(payId)) continue;
+      const payId = rec.alipay_number || rec.key_id || rec.pay_id || rec.id;
+      if (!payId) {
+        logger.warn(`[${saler}] QR recharge: no payId, skipping. Keys: ${Object.keys(rec).join(', ')}`);
+        continue;
+      }
+      if (sentQr.has(payId)) continue;
 
-      userState.sentQrPayments.add(payId);
+      sentQr.add(payId);
       const deviceId = rec.device || rec.card_num;
       const location = rec.location || userState.devices.get(deviceId)?.location || deviceId;
-      const amount = parseFloat(rec.value || 0).toFixed(2);
+      const amount   = parseFloat(rec.value || 0).toFixed(2);
 
       state.addPendingAlertToAll(saler, {
         type: 'qr_payment',
@@ -305,16 +301,21 @@ async function checkQrPayments(userState) {
   const consumeData = await api.getConsumeList(appid, saler, beginTime, endTime, 1);
   if (consumeData?.code === 0 && Array.isArray(consumeData.data)) {
     for (const rec of consumeData.data) {
-      const payId = rec.pay_id || rec.key_id;
+      const payId  = rec.pay_id || rec.key_id || rec.alipay_number || rec.id;
       const water1 = parseFloat(rec.water1 || 0);
       const water2 = parseFloat(rec.water2 || 0);
-      const cost = parseFloat(rec.cost_value || rec.value || 0);
+      const cost   = parseFloat(rec.cost_value || rec.value || 0);
 
       if (cost > 0 && water1 === 0 && water2 === 0) {
-        const noDispKey = `no_dispense_${payId}`;
-        if (userState.sentQrPayments.has(noDispKey)) continue;
+        if (!payId) {
+          logger.warn(`[${saler}] No dispense: no payId, skipping. Keys: ${Object.keys(rec).join(', ')}`);
+          continue;
+        }
 
-        userState.sentQrPayments.add(noDispKey);
+        const noDispKey = `no_dispense_${payId}`;
+        if (sentQr.has(noDispKey)) continue;
+
+        sentQr.add(noDispKey);
         const deviceId = rec.shop_num || rec.card_num;
         const location = rec.location || userState.devices.get(deviceId)?.location || deviceId;
 
@@ -326,33 +327,31 @@ async function checkQrPayments(userState) {
     }
   }
 
-
-  // Czyszczenie starych zapisów
-  if (userState.sentQrPayments.size > 500) {
-    const first = userState.sentQrPayments.values().next().value;
-    userState.sentQrPayments.delete(first);
+  // Очистка старых записей
+  if (sentQr.size > 500) {
+    sentQr.delete(sentQr.values().next().value);
   }
 }
 
 // ================================================================
-// 5. Sprawdzanie kart SIM
+// 5. SIM-карты
 // ================================================================
 async function checkSimCards(userState) {
   const { appid, saler } = userState;
   const sims = await api.getAllSims(appid, saler);
 
   for (const sim of sims) {
-    const iccid = sim.iccid;
+    const iccid    = sim.iccid;
     const deviceId = sim.imei;
     const location = sim.location || userState.devices.get(deviceId)?.location || deviceId;
 
     if (!sim.valid_date) continue;
 
     const expireDate = dayjs(sim.valid_date);
-    const daysLeft = expireDate.diff(getWarsawNow(), 'day');
-    const expireStr = expireDate.format('DD.MM.YYYY');
+    const daysLeft   = expireDate.diff(getWarsawNow(), 'day');
+    const expireStr  = expireDate.format('DD.MM.YYYY');
 
-    const keyExpired = `sim_expired_${iccid}`;
+    const keyExpired  = `sim_expired_${iccid}`;
     const keyExpiring = `sim_expiring_${iccid}`;
 
     if (daysLeft <= 0) {
@@ -373,12 +372,11 @@ async function checkSimCards(userState) {
 }
 
 // ================================================================
-// 6. Raport dzienny
+// 6. Ежедневный отчёт
 // ================================================================
-
 async function checkDailyReport(userState) {
   const { appid, saler } = userState;
-  const now = getWarsawNow();
+  const now  = getWarsawNow();
   const hour = now.hour();
   const date = now.format('YYYY-MM-DD');
 
@@ -386,12 +384,10 @@ async function checkDailyReport(userState) {
   if (state.getDailyReportSent(saler) === date) return;
   state.setDailyReportSent(saler, date);
 
-  const yesterday = now.subtract(1, 'day');
+  const yesterday    = now.subtract(1, 'day');
   const yesterdayStr = yesterday.format('YYYY-MM-DD');
-
-  // Konwertujemy granice dnia po Warsaw → UTC+8 dla API
-  const beginTime = toApiTime(yesterday.startOf('day'));
-  const endTime = toApiTime(yesterday.endOf('day'));
+  const beginTime    = toApiTime(yesterday.startOf('day'));
+  const endTime      = toApiTime(yesterday.endOf('day'));
 
   logger.info(`[${saler}] Daily report: Warsaw ${yesterdayStr} 00:00–23:59 → API ${beginTime} → ${endTime}`);
 
@@ -439,14 +435,14 @@ async function checkDailyReport(userState) {
 
   logger.info(`[${saler}] Daily report prepared for ${yesterdayStr}: ${allRecords.length} records`);
 }
+
 // ================================================================
-// Raporty dzienne dla wszystkich saler (wywoływane raz w cron)
+// Вспомогательная функция: отчёт за произвольный период
 // ================================================================
-// Новая вспомогательная функция сбора данных за произвольный период
 async function buildRangeReport(userState, from, to, title) {
   const { appid, saler } = userState;
   const beginTime = toApiTime(from);
-  const endTime = toApiTime(to);
+  const endTime   = toApiTime(to);
 
   const allRecords = [];
   let page = 1;
@@ -477,11 +473,11 @@ async function buildRangeReport(userState, from, to, title) {
     lines.push('Нет данных за период');
   } else {
     for (const e of entries) {
-      lines.push(`${e.location} — ${e.liters.toFixed(1)} L — ${e.amount.toFixed(2)} руб`);
+      lines.push(`${e.location} — ${e.liters.toFixed(1)} L — ${e.amount.toFixed(2)} zł`);
       totalLiters += e.liters;
       totalAmount += e.amount;
     }
-    lines.push(`\n*Итого: ${totalLiters.toFixed(1)} L — ${totalAmount.toFixed(2)} руб*`);
+    lines.push(`\n*Итого: ${totalLiters.toFixed(1)} L — ${totalAmount.toFixed(2)} zł*`);
   }
 
   state.addPendingAlertToAll(saler, {
@@ -493,12 +489,14 @@ async function buildRangeReport(userState, from, to, title) {
   logger.info(`[${saler}] Period report built: ${title}, records: ${allRecords.length}`);
 }
 
-// Еженедельный отчёт (каждый понедельник в час ежедневного отчёта)
+// ================================================================
+// Еженедельный отчёт
+// ================================================================
 async function checkWeeklyReport(userState) {
   const { saler } = userState;
-  const now = getWarsawNow();
-  const hour = now.hour();
-  const dayOfWeek = now.day(); // 0=воскресенье, 1=понедельник
+  const now       = getWarsawNow();
+  const hour      = now.hour();
+  const dayOfWeek = now.day();
 
   if (dayOfWeek !== 1) return;
   if (hour !== cfg.dailyReportHour) return;
@@ -507,42 +505,40 @@ async function checkWeeklyReport(userState) {
   if (state.getWeeklyReportSent(saler) === weekKey) return;
   state.setWeeklyReportSent(saler, weekKey);
 
-  // Прошлая неделя: пн–вс
   const startOfLastWeek = now.subtract(7, 'day').startOf('day');
-  const endOfLastWeek = now.subtract(1, 'day').endOf('day');
+  const endOfLastWeek   = now.subtract(1, 'day').endOf('day');
 
   logger.info(`[${saler}] Building weekly report: ${startOfLastWeek.format('DD.MM')}–${endOfLastWeek.format('DD.MM.YYYY')}`);
   await buildRangeReport(userState, startOfLastWeek, endOfLastWeek, '📊 Итог за неделю');
 }
 
-// Месячный отчёт (1-го числа каждого месяца в час ежедневного отчёта)
+// ================================================================
+// Ежемесячный отчёт
+// ================================================================
 async function checkMonthlyReport(userState) {
-  const { saler } = userState;
-  const now = getWarsawNow();
-  const hour = now.hour();
-  const dayOfMonth = now.date();
+  const { saler }    = userState;
+  const now          = getWarsawNow();
+  const hour         = now.hour();
+  const dayOfMonth   = now.date();
 
   if (dayOfMonth !== 1) return;
   if (hour !== cfg.dailyReportHour) return;
 
   const lastMonth = now.subtract(1, 'month');
-  const monthKey = lastMonth.format('YYYY-MM');
+  const monthKey  = lastMonth.format('YYYY-MM');
   if (state.getMonthlyReportSent(saler) === monthKey) return;
   state.setMonthlyReportSent(saler, monthKey);
 
   const startOfLastMonth = lastMonth.startOf('month');
-  const endOfLastMonth = lastMonth.endOf('month');
+  const endOfLastMonth   = lastMonth.endOf('month');
 
   logger.info(`[${saler}] Building monthly report: ${monthKey}`);
-  await buildRangeReport(
-    userState,
-    startOfLastMonth,
-    endOfLastMonth,
-    `📊 Итог за ${lastMonth.format('MMMM YYYY')}`
-  );
+  await buildRangeReport(userState, startOfLastMonth, endOfLastMonth, `📊 Итог за ${lastMonth.format('MMMM YYYY')}`);
 }
 
-// Обновлённый runDailyReportsForAllSalers — теперь включает weekly и monthly
+// ================================================================
+// Запуск отчётов для всех saler (вызывается из cron)
+// ================================================================
 async function runDailyReportsForAllSalers() {
   const users = state.getAllUsers();
   const processedSalers = new Set();
@@ -572,5 +568,4 @@ async function runDailyReportsForAllSalers() {
   }
 }
 
-// Обновить экспорт:
 module.exports = { runMonitorCycle, runDailyReportsForAllSalers };

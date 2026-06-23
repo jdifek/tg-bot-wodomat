@@ -185,7 +185,9 @@ async function handleDevices(ctx) {
 
   const total = userState.allDeviceIds.length;
   const lines = [
-    `📊 *Онлайн ${onlineList.length} / Офлайн ${offlineList.length} / Всего ${total}*`,
+    t.totalDevices(total),
+    t.devicesOnline(onlineList.length),
+    t.devicesOffline(offlineList.length),
     '',
   ];
 
@@ -193,12 +195,12 @@ async function handleDevices(ctx) {
     lines.push(t.devicesEmpty);
   } else {
     if (offlineList.length > 0) {
-      lines.push('*🔴 Нет связи:*');
+      lines.push(t.statusOffline);
       lines.push(...offlineList);
       if (onlineList.length > 0) lines.push('');
     }
     if (onlineList.length > 0) {
-      lines.push('*🟢 Онлайн:*');
+      lines.push(t.statusOnline);
       lines.push(...onlineList);
     }
   }
