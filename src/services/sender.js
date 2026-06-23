@@ -64,7 +64,6 @@ async function sendAlertsBatch(bot, chatId, alerts) {
 // Bezpieczne wysyłanie z obsługą limitów Telegram
 // ================================================================
 async function safeSend(bot, chatId, text) {
-  // Obsługujemy oba warianty: bot (Telegraf) i { telegram } oraz ctx.telegram bezpośrednio
   const telegram = bot?.telegram ?? bot;
 
   if (!telegram?.sendMessage) {
@@ -72,14 +71,35 @@ async function safeSend(bot, chatId, text) {
     return;
   }
 
+  const send = async (txt, mode) => {
+    await telegram.sendMessage(chatId, txt, {
+      parse_mode: mode,
+      disable_web_page_preview: true,
+    });
+  };
+
   try {
     if (text.length > 4000) {
       for (const part of splitText(text, 4000)) {
-        await telegram.sendMessage(chatId, part, { parse_mode: 'Markdown', disable_web_page_preview: true });
+        try {
+          await send(part, 'Markdown');
+        } catch (e) {
+          if (e.code === 400) {
+            logger.warn(`Markdown parse error for ${chatId}, retrying as plain text`);
+            await send(part, undefined);
+          } else throw e;
+        }
         await sleep(150);
       }
     } else {
-      await telegram.sendMessage(chatId, text, { parse_mode: 'Markdown', disable_web_page_preview: true });
+      try {
+        await send(text, 'Markdown');
+      } catch (e) {
+        if (e.code === 400) {
+          logger.warn(`Markdown parse error for ${chatId}, retrying as plain text`);
+          await send(text, undefined);
+        } else throw e;
+      }
     }
   } catch (err) {
     logger.error(`Failed to send message to ${chatId}: ${err.message}`);

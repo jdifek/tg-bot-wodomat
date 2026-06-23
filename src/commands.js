@@ -229,7 +229,7 @@ async function handleAlerts(ctx) {
     await monitor.runMonitorCycle(userState, {
       checkDeviceDetail: true,
       checkExceptions: true,
-      checkQrPayments: фfalse,
+      checkQrPayments: false,
       skipDailyReport: true,
       forceRefresh: true,
     });
