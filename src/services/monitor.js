@@ -95,9 +95,15 @@ async function refreshDeviceList(userState) {
     for (const d of devices) {
       allIds.push(d.id);
       if (!userState.devices.has(d.id)) {
-        userState.devices.set(d.id, { location: d.location || d.id, type });
+        userState.devices.set(d.id, {
+          location: d.location || d.id,
+          type,
+          lastConnect: d.lastConnect || null,
+        });
       } else {
-        userState.devices.get(d.id).location = d.location || d.id;
+        const existing = userState.devices.get(d.id);
+        existing.location = d.location || d.id;
+        if (d.lastConnect) existing.lastConnect = d.lastConnect;
       }
     }
     await api.sleep(cfg.requestDelayMs);
@@ -186,6 +192,39 @@ async function checkExceptions(userState) {
 
     await api.sleep(cfg.requestDelayMs);
   }
+
+  // Дополнительная проверка: все устройства из кэша, которые не вернул API
+  for (const deviceId of userState.allDeviceIds) {
+    const dev = userState.devices.get(deviceId);
+    if (!dev?.lastConnect) continue;
+
+    const lastSeen = dayjs.tz(dev.lastConnect, 'YYYY-MM-DD HH:mm:ss', 'Asia/Shanghai');
+    const diffMin = getWarsawNow().diff(lastSeen, 'minute');
+    const alertKeyOffline = `offline_${deviceId}`;
+
+    if (diffMin >= cfg.offlineMinutes) {
+      state.addAlertToAll(saler, alertKeyOffline, {
+        type: 'offline',
+        msg: t.alertOffline(deviceId, dev.location || deviceId, diffMin, fromApiTime(dev.lastConnect)),
+      });
+    }
+  }
+  // Проверка температуры по всем устройствам через getDeviceDetail
+  for (const deviceId of userState.allDeviceIds) {
+    const detail = await api.getDeviceDetail(userState.appid, userState.saler, deviceId);
+    if (!detail || detail.code !== 0 || !detail.data) continue;
+
+    const d = detail.data;
+    const dev = userState.devices.get(deviceId);
+    const location = dev?.location || deviceId;
+
+    if (d.temp !== undefined && d.temp !== null && d.temp !== '') {
+      checkTemp(userState, deviceId, location, parseFloat(d.temp));
+    }
+
+    await api.sleep(cfg.requestDelayMs);
+  }
+
 }
 
 // ================================================================

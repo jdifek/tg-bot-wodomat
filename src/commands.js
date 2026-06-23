@@ -165,20 +165,41 @@ async function handleDevices(ctx) {
   // Сбрасываем pendingAlerts чтобы не задвоились в следующем flush
   state.flushPendingAlerts(userState);
 
-  const lines = [t.devicesHeader];
+  const onlineList = [];
+  const offlineList = [];
 
-  if (userState.allDeviceIds.length === 0) {
+  for (const id of userState.allDeviceIds) {
+    const d = userState.devices.get(id);
+    const loc = d?.location || id;
+    const isOff = userState.activeAlerts.has(`offline_${id}`);
+    const lastConn = d?.lastConnect
+      ? `(${dayjs(d.lastConnect).format('DD.MM HH:mm')})`
+      : '';
+    const entry = `${id} — ${loc} ${lastConn}`;
+    if (isOff) {
+      offlineList.push(`🔴 ${entry}`);
+    } else {
+      onlineList.push(`🟢 ${entry}`);
+    }
+  }
+
+  const total = userState.allDeviceIds.length;
+  const lines = [
+    `📊 *Онлайн ${onlineList.length} / Офлайн ${offlineList.length} / Всего ${total}*`,
+    '',
+  ];
+
+  if (total === 0) {
     lines.push(t.devicesEmpty);
   } else {
-    for (const id of userState.allDeviceIds) {
-      const d = userState.devices.get(id);
-      const loc = d?.location || id;
-      const isOff = userState.activeAlerts.has(`offline_${id}`);
-      const lastConn = d?.lastConnect
-        ? `(${dayjs(d.lastConnect).format('DD.MM HH:mm')})`
-        : '';
-      const status = isOff ? t.statusOffline : t.statusOnline;
-      lines.push(`${id} — ${loc} — ${status} ${lastConn}`);
+    if (offlineList.length > 0) {
+      lines.push('*🔴 Нет связи:*');
+      lines.push(...offlineList);
+      if (onlineList.length > 0) lines.push('');
+    }
+    if (onlineList.length > 0) {
+      lines.push('*🟢 Онлайн:*');
+      lines.push(...onlineList);
     }
   }
 
@@ -208,7 +229,7 @@ async function handleAlerts(ctx) {
     await monitor.runMonitorCycle(userState, {
       checkDeviceDetail: true,
       checkExceptions: true,
-      checkQrPayments: false,
+      checkQrPayments: фfalse,
       skipDailyReport: true,
       forceRefresh: true,
     });
