@@ -67,8 +67,8 @@ module.exports = {
   devicesEmpty:  `Аппараты не найдены.`,
 
   // ---- Алерты ----
-  noProblems:       `✅ ОШИБОК НЕТ`,
-  currentProblems:  (n) => `Текущие проблемы (${n}):`,
+  noProblems:      `✅ ОШИБОК НЕТ`,
+  currentProblems: (n) => `Текущие проблемы (${n}):`,
 
   // ---- Отчёт продаж ----
   reportHeader: (date) => `📊 *Отчёт продаж за ${date}*`,
@@ -98,32 +98,36 @@ module.exports = {
     `🔧 ID: \`${deviceId}\`\n` +
     `💡 Проверьте кран подачи воды, работу мембран и насосов`,
 
-  alertNoDispense: (deviceId, location, amount) =>
+  alertNoDispense: (deviceId, location, amount, time) =>
     `💸 *ПРОДАЖА БЕЗ РОЗЛИВА*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `💰 Сумма оплаты: ${amount} zł\n` +
+    (time ? `🕐 Время транзакции: ${time}\n` : '') +
     `💡 Проведена оплата, но вода не выдана — проверьте аппарат`,
 
-  alertTempLow: (deviceId, location, temp) =>
+  alertTempLow: (deviceId, location, temp, time) =>
     `🥶 *НИЗКАЯ ТЕМПЕРАТУРА*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `🌡 Температура: *${temp}°C*\n` +
+    (time ? `🕐 С: ${time}\n` : '') +
     `💡 Проверьте электричество и систему обогрева водомата`,
 
-  alertTempHigh: (deviceId, location, temp) =>
+  alertTempHigh: (deviceId, location, temp, time) =>
     `🔥 *ВЫСОКАЯ ТЕМПЕРАТУРА*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `🌡 Температура: *${temp}°C*\n` +
+    (time ? `🕐 С: ${time}\n` : '') +
     `💡 Проверьте систему охлаждения и вентиляцию`,
 
-  alertOffline: (deviceId, location, minutes) =>
+  alertOffline: (deviceId, location, minutes, lastConnect) =>
     `📵 *АППАРАТ НЕ НА СВЯЗИ*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
     `⏱ Не выходил на связь: *${minutes} мин.*\n` +
+    (lastConnect ? `🕐 Последнее подключение: ${lastConnect}\n` : '') +
     `💡 Проверьте подачу электричества или работу SIM-карты`,
 
   dailyReportHeader: (date) =>
@@ -149,11 +153,12 @@ module.exports = {
     `🔧 ID: \`${deviceId}\`\n` +
     `💡 Возможно есть проблемы с аппаратом`,
 
-  alertQrPayment: (deviceId, location, amount) =>
+  alertQrPayment: (deviceId, location, amount, time) =>
     `💳 *УДАЛЁННОЕ ПОПОЛНЕНИЕ QR*\n` +
     `📍 ${location}\n` +
     `🔧 ID: \`${deviceId}\`\n` +
-    `💰 Сумма: *${amount} zł*`,
+    `💰 Сумма: *${amount} zł*\n` +
+    (time ? `🕐 Время: ${time}\n` : ''),
 
   alertSimExpiring: (iccid, deviceLocation, daysLeft, expireDate) =>
     `📶 *ИСТЕКАЕТ ОПЛАТА SIM-КАРТЫ*\n` +
@@ -169,19 +174,39 @@ module.exports = {
     `🔢 ICCID: \`${iccid}\`\n` +
     `💡 Внесите оплату за мониторинг немедленно`,
 
-  alertWaterLevel: (deviceId, location, level) =>
-    `🚱 *ПРОБЛЕМА С УРОВНЕМ ВОДЫ*\n` +
-    `📍 ${location}\n` +
-    `🔧 ID: \`${deviceId}\`\n` +
-    `📊 Статус: ${level}\n` +
-    `💡 Проверьте кран подачи воды в водомат, работу мембран и насосов`,
+  alertWaterLevel: (deviceId, location, level, lastConnect) => {
+    const STATUS_MAP = {
+      '异常': 'Неисправность', '正常': 'Норма',
+      '空': 'Пусто', '空仓': 'Пусто',
+      '缺水': 'Нет воды', '无水': 'Нет воды',
+      '低水位': 'Низкий уровень', '高水位': 'Высокий уровень',
+      '高': 'Высокий', '低': 'Низкий',
+    };
+    const levelRU = STATUS_MAP[level] || level;
+    return `🚱 *ПРОБЛЕМА С УРОВНЕМ ВОДЫ*\n` +
+      `📍 ${location}\n` +
+      `🔧 ID: \`${deviceId}\`\n` +
+      `📊 Статус: ${levelRU}\n` +
+      (lastConnect ? `🕐 С: ${lastConnect}\n` : '') +
+      `💡 Проверьте кран подачи воды в водомат, работу мембран и насосов`;
+  },
 
-  alertWaterPressure: (deviceId, location, pressure) =>
-    `💨 *ПРОБЛЕМА С ДАВЛЕНИЕМ ВОДЫ*\n` +
-    `📍 ${location}\n` +
-    `🔧 ID: \`${deviceId}\`\n` +
-    `📊 Статус давления: ${pressure}\n` +
-    `💡 Проверьте подключение водопровода`,
+  alertWaterPressure: (deviceId, location, pressure, lastConnect) => {
+    const STATUS_MAP = {
+      '异常': 'Неисправность', '正常': 'Норма',
+      '空': 'Пусто', '空仓': 'Пусто',
+      '缺水': 'Нет воды', '无水': 'Нет воды',
+      '低压力': 'Низкое давление', '高压力': 'Высокое давление', '无压力': 'Нет давления',
+      '高': 'Высокое', '低': 'Низкое',
+    };
+    const pressureRU = STATUS_MAP[pressure] || pressure;
+    return `💨 *ПРОБЛЕМА С ДАВЛЕНИЕМ ВОДЫ*\n` +
+      `📍 ${location}\n` +
+      `🔧 ID: \`${deviceId}\`\n` +
+      `📊 Статус давления: ${pressureRU}\n` +
+      (lastConnect ? `🕐 С: ${lastConnect}\n` : '') +
+      `💡 Проверьте подключение водопровода`;
+  },
 
   alertResolved: (deviceId, location, type) =>
     `✅ *ПРОБЛЕМА УСТРАНЕНА*\n` +

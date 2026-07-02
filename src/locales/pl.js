@@ -180,6 +180,8 @@ module.exports = {
       '空': 'Pusty', '空仓': 'Pusty',
       '缺水': 'Brak wody', '无水': 'Brak wody',
       '低水位': 'Niski poziom', '高水位': 'Wysoki poziom',
+      '高': 'Wysoki', '低': 'Niski',   // ← добавить эти две строки
+
     };
     const levelPL = STATUS_MAP[level] || level;
     return `🚱 *PROBLEM Z POZIOMEM WODY*\n` +
@@ -196,6 +198,8 @@ module.exports = {
       '空': 'Pusty', '空仓': 'Pusty',
       '缺水': 'Brak wody', '无水': 'Brak wody',
       '低压力': 'Niskie ciśnienie', '高压力': 'Wysokie ciśnienie', '无压力': 'Brak ciśnienia',
+      '高': 'Wysokie', '低': 'Niskie',   // ← добавить эти две строки
+
     };
     const pressurePL = STATUS_MAP[pressure] || pressure;
     return `💨 *PROBLEM Z CIŚNIENIEM WODY*\n` +
