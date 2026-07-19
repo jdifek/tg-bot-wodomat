@@ -15,8 +15,9 @@ async function checkSubscription(appid, saler) {
     const data = await res.json();
     return data.active === true;
   } catch (err) {
-    logger.error(`subscriptionChecker error: ${err.message}`);
-    return false; // при ошибке сети — считаем неактивной
+    console.error(err);
+    logger.error(err.stack || String(err));
+    return false;
   }
 }
 
