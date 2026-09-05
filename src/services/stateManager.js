@@ -59,7 +59,29 @@ function getUser(chatId) {
 
 function setUser(chatId, appid, saler) {
   chatId = String(chatId);
-  if (users.has(chatId)) return users.get(chatId);
+  const existing = users.get(chatId);
+
+  if (existing) {
+    if (existing.appid === appid && existing.saler === saler) {
+      return existing; // ничего не изменилось — просто отдаём как есть
+    }
+
+    // appid/saler сменились — обновляем и полностью сбрасываем кэш устройств/алертов,
+    // чтобы не тащить за собой данные от предыдущего (чужого) аккаунта
+    existing.appid = appid;
+    existing.saler = saler;
+    existing.devices = new Map();
+    existing.activeAlerts = new Map();
+    existing.pendingAlerts = [];
+    existing.allDeviceIds = [];
+    existing.deviceIdsLastUpdate = 0;
+    existing.batchOffset = 0;
+    existing.lastDailyReportDate = null;
+
+    saveUsers();
+    return existing;
+  }
+
   const state = createUserState(chatId, appid, saler);
   users.set(chatId, state);
   saveUsers();
