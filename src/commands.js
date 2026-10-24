@@ -16,10 +16,18 @@ const { checkSubscription } = require('./services/subscriptionChecker');
 const t = require('./locales/' + cfg.locale);
 const reports = require('./services/reports');
 
+// const MAIN_KEYBOARD = {
+//   keyboard: [
+//     [{ text: reports.BTN_DEVICES }, { text: reports.BTN_ALERTS }],
+//     [{ text: reports.BTN_REPORT }, { text: reports.BTN_10 }, { text: reports.BTN_30 }],
+//   ],
+//   resize_keyboard: true,
+// };
+
 const MAIN_KEYBOARD = {
   keyboard: [
     [{ text: reports.BTN_DEVICES }, { text: reports.BTN_ALERTS }],
-    [{ text: reports.BTN_REPORT }, { text: reports.BTN_10 }, { text: reports.BTN_30 }],
+    [{ text: reports.BTN_REPORT }],
   ],
   resize_keyboard: true,
 };

@@ -49,9 +49,10 @@ bot.hears('/report', cmds.handleReport);
 // Кнопки клавиатуры
 bot.hears(reports.BTN_DEVICES, cmds.handleDevices);
 bot.hears(reports.BTN_ALERTS, cmds.handleAlerts);
+// bot.hears(reports.BTN_REPORT, cmds.handleReport);
+// bot.hears(reports.BTN_10, cmds.handleReport10);
+// bot.hears(reports.BTN_30, cmds.handleReport30);
 bot.hears(reports.BTN_REPORT, cmds.handleReport);
-bot.hears(reports.BTN_10, cmds.handleReport10);
-bot.hears(reports.BTN_30, cmds.handleReport30);
 bot.on('message', (ctx) => {
   const text = ctx.message?.text || '';
   if (!text.startsWith('/')) return;
