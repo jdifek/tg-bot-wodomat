@@ -14,7 +14,15 @@ const state = require('./services/stateManager');
 const sender = require('./services/sender');
 const { checkSubscription } = require('./services/subscriptionChecker');
 const t = require('./locales/' + cfg.locale);
+const reports = require('./services/reports');
 
+const MAIN_KEYBOARD = {
+  keyboard: [
+    [{ text: reports.BTN_DEVICES }, { text: reports.BTN_ALERTS }],
+    [{ text: reports.BTN_REPORT }, { text: reports.BTN_10 }, { text: reports.BTN_30 }],
+  ],
+  resize_keyboard: true,
+};
 // ================================================================
 // Утилиты времени
 // ================================================================
@@ -65,8 +73,10 @@ async function handleStart(ctx) {
     if (!active) {
       return ctx.reply(t.subscriptionExpired, { parse_mode: 'Markdown' });
     }
-    return ctx.reply(t.alreadyRegistered(existing.saler), { parse_mode: 'Markdown' });
-  }
+    return ctx.reply(t.alreadyRegistered(existing.saler), {
+      parse_mode: 'Markdown',
+      reply_markup: MAIN_KEYBOARD,
+    });  }
 
   let appid, saler;
 
@@ -99,14 +109,7 @@ async function handleStart(ctx) {
 
   await ctx.reply(t.welcome(saler), {
     parse_mode: 'Markdown',
-    reply_markup: {
-      keyboard: [
-        [{ text: '/devices' }, { text: '/alerts' }],
-        [{ text: '/report' }, { text: '/mute' }],
-        [{ text: '/unmute' }, { text: '/help' }],
-      ],
-      resize_keyboard: true,
-    },
+    reply_markup: MAIN_KEYBOARD,
   });
 }
 
@@ -268,59 +271,35 @@ async function handleReport(ctx) {
 
   await ctx.reply(t.fetchingData);
 
-  const { appid, saler } = userState;
+  const todayStr = reports.today();
+  const data = await reports.fetchReport(userState.appid, userState.saler, todayStr, todayStr);
+  if (!data) return ctx.reply(reports.W.fail);
 
-  const todayStr = getWarsawToday();
-  const beginTime = dayStartWarsaw(todayStr);
-  const endTime = dayEndWarsaw(todayStr);
+  const header = t.reportHeader(todayStr);
+  let text = reports.formatReport(header, data);
+  if (!data.complete) text += `\n\n⚠️ ${reports.W.partial}`;
 
-  logger.info(`[Report] ${todayStr} | ${beginTime} - ${endTime}`);
+  await sender.safeSend({ telegram: ctx.telegram }, String(ctx.chat.id), text);
+}
+async function handleReportRange(ctx, days) {
+  const userState = state.getUser(String(ctx.chat.id));
+  if (!userState) return ctx.reply(t.invalidStart, { parse_mode: 'Markdown' });
+  if (!await requireSubscription(ctx, userState)) return;
 
-  const allRecords = [];
-  let page = 1;
+  await ctx.reply(t.fetchingData);
 
-  while (true) {
-    const data = await api.getConsumeList(appid, saler, beginTime, endTime, page);
-    if (!data || data.code !== 0 || !data.data?.length) break;
-    allRecords.push(...data.data);
-    if (data.data.length < 20) break;
-    page++;
-  }
+  const r = reports.lastDays(days);
+  const data = await reports.fetchReport(userState.appid, userState.saler, r.from, r.to);
+  if (!data) return ctx.reply(reports.W.fail);
 
-  const byDevice = {};
+  let text = reports.formatReport(reports.rangeHeader(days, r), data);
+  if (!data.complete) text += `\n\n⚠️ ${reports.W.partial}`;
 
-  for (const rec of allRecords) {
-    const deviceId = rec.shop_num || rec.card_num || rec.device;
-    if (!deviceId) continue;
-
-    const location = rec.location || userState.devices.get(deviceId)?.location || deviceId;
-
-    if (!byDevice[deviceId]) {
-      byDevice[deviceId] = { location, liters: 0, amount: 0 };
-    }
-
-    byDevice[deviceId].liters += parseFloat(rec.water1 || 0) + parseFloat(rec.water2 || 0);
-    byDevice[deviceId].amount += parseFloat(rec.cost_value || rec.value || 0);
-  }
-
-  let totalL = 0, totalA = 0;
-  const lines = [t.reportHeader(todayStr)];
-  const entries = Object.values(byDevice);
-
-  if (!entries.length) {
-    lines.push(t.reportEmpty);
-  } else {
-    for (const e of entries) {
-      lines.push(`${e.location} — ${e.liters.toFixed(1)} L — ${e.amount.toFixed(2)} zł`);
-      totalL += e.liters;
-      totalA += e.amount;
-    }
-    lines.push(t.reportTotal(totalL.toFixed(1), totalA.toFixed(2)));
-  }
-
-  await sender.safeSend({ telegram: ctx.telegram }, String(ctx.chat.id), lines.join('\n'));
+  await sender.safeSend({ telegram: ctx.telegram }, String(ctx.chat.id), text);
 }
 
+const handleReport10 = (ctx) => handleReportRange(ctx, 10);
+const handleReport30 = (ctx) => handleReportRange(ctx, 30);
 // ================================================================
 // /mute
 // ================================================================
@@ -358,6 +337,8 @@ module.exports = {
   handleDevices,
   handleAlerts,
   handleReport,
+  handleReport10,
+  handleReport30,
   handleMute,
   handleUnmute,
   handleHelp,

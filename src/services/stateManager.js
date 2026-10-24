@@ -4,6 +4,7 @@
 const dayjs = require('dayjs');
 const fs = require('fs');
 const USERS_FILE = './data/users.json';
+const REPORTS_FILE = './data/reports.json';
 
 // Map: telegramChatId -> UserState
 const users = new Map();
@@ -193,15 +194,39 @@ function flushPendingAlerts(userState) {
 // ================================================================
 // Ежедневный / еженедельный / ежемесячный отчёт
 // ================================================================
+function saveReportFlags() {
+  try {
+    fs.mkdirSync('./data', { recursive: true });
+    fs.writeFileSync(REPORTS_FILE, JSON.stringify({
+      daily: Object.fromEntries(dailyReportSentByDate),
+      weekly: Object.fromEntries(weeklyReportSentByDate),
+      monthly: Object.fromEntries(monthlyReportSentByDate),
+    }));
+  } catch (e) {
+    console.error('Failed to save report flags:', e.message);
+  }
+}
+
+function loadReportFlags() {
+  try {
+    if (!fs.existsSync(REPORTS_FILE)) return;
+    const d = JSON.parse(fs.readFileSync(REPORTS_FILE, 'utf8'));
+    for (const [k, v] of Object.entries(d.daily || {})) dailyReportSentByDate.set(k, v);
+    for (const [k, v] of Object.entries(d.weekly || {})) weeklyReportSentByDate.set(k, v);
+    for (const [k, v] of Object.entries(d.monthly || {})) monthlyReportSentByDate.set(k, v);
+  } catch (e) {
+    console.error('Failed to load report flags:', e.message);
+  }
+}
+
 function getDailyReportSent(saler)       { return dailyReportSentByDate.get(saler)  || null; }
-function setDailyReportSent(saler, date) { dailyReportSentByDate.set(saler, date); }
+function setDailyReportSent(saler, date) { dailyReportSentByDate.set(saler, date); saveReportFlags(); }
 
 function getWeeklyReportSent(saler)      { return weeklyReportSentByDate.get(saler) || null; }
-function setWeeklyReportSent(saler, key) { weeklyReportSentByDate.set(saler, key); }
+function setWeeklyReportSent(saler, key) { weeklyReportSentByDate.set(saler, key); saveReportFlags(); }
 
 function getMonthlyReportSent(saler)     { return monthlyReportSentByDate.get(saler) || null; }
-function setMonthlyReportSent(saler, key){ monthlyReportSentByDate.set(saler, key); }
-
+function setMonthlyReportSent(saler, key){ monthlyReportSentByDate.set(saler, key); saveReportFlags(); }
 // ================================================================
 // Персистентность пользователей
 // ================================================================
@@ -229,6 +254,7 @@ function loadUsers() {
 }
 
 loadUsers();
+loadReportFlags();
 
 module.exports = {
   // пользователи

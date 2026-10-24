@@ -13,7 +13,7 @@ const sender = require('./services/sender');
 const cmds = require('./commands');
 const { checkSubscription } = require('./services/subscriptionChecker');
 const { acquireLock, releaseLock } = require('./lockfile');
-
+const reports = require('./services/reports');
 const bot = new Telegraf(cfg.botToken);
 
 bot.catch((err, ctx) => {
@@ -45,10 +45,13 @@ bot.hears('/status', cmds.handleStatus);
 bot.hears('/devices', cmds.handleDevices);
 bot.hears('/alerts', cmds.handleAlerts);
 bot.hears('/report', cmds.handleReport);
-bot.hears('/mute', cmds.handleMute);
-bot.hears('/unmute', cmds.handleUnmute);
-bot.hears('/help', cmds.handleHelp);
 
+// Кнопки клавиатуры
+bot.hears(reports.BTN_DEVICES, cmds.handleDevices);
+bot.hears(reports.BTN_ALERTS, cmds.handleAlerts);
+bot.hears(reports.BTN_REPORT, cmds.handleReport);
+bot.hears(reports.BTN_10, cmds.handleReport10);
+bot.hears(reports.BTN_30, cmds.handleReport30);
 bot.on('message', (ctx) => {
   const text = ctx.message?.text || '';
   if (!text.startsWith('/')) return;
@@ -89,10 +92,20 @@ cron.schedule('*/5 * * * *', async () => {
     }
   }
 
-  await monitor.runDailyReportsForAllSalers();
+  const seenSalers = new Set();
+  for (const u of users) {
+    if (seenSalers.has(u.saler)) continue;
+    seenSalers.add(u.saler);
+    try {
+      const active = await checkSubscription(u.appid, u.saler);
+      if (!active) continue;
+      await reports.runScheduledReports(u);
+    } catch (err) {
+      logger.error(`🔥 REPORT ERROR saler=${u.saler}: ${err.message}`);
+    }
+  }
 
   cycleCounter++;
-
   logger.info(`[CRON] Flushing alerts to Telegram`);
   await sender.flushAllAlerts(bot);
 });
